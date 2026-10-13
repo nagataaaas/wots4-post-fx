@@ -1,0 +1,7 @@
+#include <windows.h>
+101 RCDATA "@shader_directory@/copy.cso"
+102 RCDATA "@shader_directory@/fxaa.cso"
+103 RCDATA "@shader_directory@/motion_blur.cso"
+104 RCDATA "@shader_directory@/smaa_edges.cso"
+105 RCDATA "@shader_directory@/smaa_weights.cso"
+106 RCDATA "@shader_directory@/smaa_blend.cso"

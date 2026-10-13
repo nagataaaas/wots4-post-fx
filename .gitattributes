@@ -1,0 +1,2 @@
+# Preserve vendored source and lookup tables exactly as supplied by upstream.
+third_party/smaa/* -text -whitespace

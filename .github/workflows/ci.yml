@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  # ModLoader (Mod SDK) version used for the build: a wots4-mods tag or commit
+  WOTS4_SDK_REF: master  # ModLoader version to use. Pinning it to a release tag (e.g. v0.1.0) is recommended
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mod
+
+      - uses: actions/checkout@v4
+        with:
+          repository: nagataaaas/wots4-mods
+          ref: ${{ env.WOTS4_SDK_REF }}
+          path: sdk
+
+      - name: build and test
+        run: |
+          cmake -S mod -B build -A Win32 -DWOTS4_SDK_DIR="${{ github.workspace }}/sdk"
+          cmake --build build --config Release
+          ctest --test-dir build -C Release -LE "needs_exe|gpu" --output-on-failure --timeout 300

@@ -1,0 +1,56 @@
+name: Release
+
+# Release only this Mod, zipped as mods/<name>/ (the ModLoader is not included)
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  WOTS4_SDK_REF: master  # ModLoader version to use. Pinning it to a release tag (e.g. v0.1.0) is recommended
+  MOD_NAME: post_fx
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mod
+
+      - uses: actions/checkout@v4
+        with:
+          repository: nagataaaas/wots4-mods
+          ref: ${{ env.WOTS4_SDK_REF }}
+          path: sdk
+
+      - name: build and test
+        run: |
+          cmake -S mod -B build -A Win32 -DWOTS4_SDK_DIR="${{ github.workspace }}/sdk"
+          cmake --build build --config Release
+          ctest --test-dir build -C Release -LE "needs_exe|gpu" --output-on-failure --timeout 300
+
+      # A NO_RELEASE Mod is not an install target, so the job stops here
+      - name: create zip
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          $name = "${{ env.MOD_NAME }}"
+          cmake --install build --config Release --component $name --prefix stage
+          if (-not (Test-Path "stage/mods/$name/mod.dll")) {
+            Write-Error "mod.dll not found. Remove NO_RELEASE from CMakeLists.txt before tagging."
+            exit 1
+          }
+          New-Item -ItemType Directory -Force dist | Out-Null
+          $zipName = $name.Replace('_', '-')
+          Compress-Archive -Path stage/* -DestinationPath "dist/wots4-mod-$zipName-$version.zip"
+          Get-ChildItem -Recurse stage
+
+      # The working directory is not a git checkout (the Mod is checked out to mod/), so name the repository
+      - name: create Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/*.zip --repo "${{ github.repository }}" --title "${{ env.MOD_NAME }} ${{ github.ref_name }}" --generate-notes
