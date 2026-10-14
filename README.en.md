@@ -9,8 +9,9 @@ This prototype has been tested outside the game. Image quality, the options tab,
 ## Features
 
 - FXAA reduces jagged edges. Fine patterns can become softer.
-- SMAA 1x detects edge patterns and uses the official implementation's High preset.
+- SMAA 1x detects edge patterns and uses the official implementation's Ultra preset. It also uses depth differences, so it smooths the outlines of objects whose colors are close to the background.
 - SSAA renders the 3D scene at twice the resolution on each axis, then reduces it by averaging four pixels. It can be combined with FXAA or SMAA. UI resolution stays unchanged.
+- Anti-aliasing applies before motion blur. It does not process the edges of blur streaks.
 - Motion blur follows camera movement. It does not blur independently moving characters or swords while the camera is stationary.
 - Blur strength and maximum width are reduced near the camera. This distance-based adjustment applies to the player, nearby NPCs and foreground objects.
 - Enable each effect independently. The effects apply to the 3D image, not to text or the UI.

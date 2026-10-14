@@ -136,24 +136,27 @@ unsigned difference(const std::vector<DWORD>& left, const std::vector<DWORD>& ri
     return changed;
 }
 bool render(post_fx::PostProcess& effects, IDirect3DDevice9* device, Image& image, const post_fx::Settings& settings,
-    unsigned factor = 1) {
+    unsigned factor = 1, IDirect3DTexture9* depth = nullptr) {
     if (FAILED(device->BeginScene())) return false;
-    const HRESULT result = effects.render(device, image.texture, nullptr, {}, 1, settings, factor);
+    const HRESULT result = effects.render(device, image.texture, depth, {}, 1, settings, factor);
     device->EndScene();
     return SUCCEEDED(result);
 }
-bool uploadDepth(IDirect3DDevice9* device, IDirect3DTexture9** texture, float distance) {
+// distanceAt(x, y) gives the view distance of each pixel, encoded like the game's depth target.
+template<class DistanceAt>
+bool uploadDepth(IDirect3DDevice9* device, IDirect3DTexture9** texture, DistanceAt distanceAt) {
     IDirect3DTexture9* staging = nullptr;
     if (FAILED(device->CreateTexture(imageSize, imageSize, 1, 0, D3DFMT_R32F, D3DPOOL_SYSTEMMEM, &staging, nullptr))) return false;
     constexpr float nearPlane = 0.5f, farPlane = 100;
-    const float encoded = 0.5f - 0.5f * (farPlane / (farPlane - nearPlane) -
-        nearPlane * farPlane / ((farPlane - nearPlane) * distance));
+    const auto encode = [&](float distance) {
+        return 0.5f - 0.5f * (farPlane / (farPlane - nearPlane) - nearPlane * farPlane / ((farPlane - nearPlane) * distance));
+    };
     D3DLOCKED_RECT locked{};
     bool success = SUCCEEDED(staging->LockRect(0, &locked, nullptr, 0));
     if (success) {
         for (UINT y = 0; y < imageSize; ++y) {
             auto* row = reinterpret_cast<float*>(static_cast<unsigned char*>(locked.pBits) + y * locked.Pitch);
-            for (UINT x = 0; x < imageSize; ++x) row[x] = encoded;
+            for (UINT x = 0; x < imageSize; ++x) row[x] = encode(distanceAt(x, y));
         }
         staging->UnlockRect(0);
     }
@@ -266,6 +269,43 @@ int main(int argc, char** argv) {
             return true;
         }());
     }
+    // A silhouette whose colors differ by 8/255: below the Ultra threshold (0.05), above the
+    // predicated one (0.025). Only a depth step along the same line should make it an edge.
+    const auto inFront = [](UINT x, UINT y) { return x > 12 + y / 2; };
+    for (UINT y = 0; y < imageSize; ++y)
+        for (UINT x = 0; x < imageSize; ++x)
+            input[y * imageSize + x] = 0x7f000000 | (inFront(x, y) ? 122u : 114u) * 0x010101;
+    IDirect3DTexture9* silhouetteDepth = nullptr;
+    test::check("Silhouette depth uploads", uploadDepth(fixture.device, &silhouetteDepth,
+        [&](UINT x, UINT y) { return inFront(x, y) ? 5.0f : 40.0f; }));
+    test::check("Low-contrast silhouette uploads", image.upload(fixture.device, input));
+    test::check("SMAA without depth draws the low-contrast silhouette", render(effects, fixture.device, image, settings));
+    test::check("That output reads back", image.read(fixture.device, output));
+    const unsigned changedWithoutDepth = output.size() == input.size() ? difference(input, output) : 0;
+    test::check("Low-contrast silhouette uploads again", image.upload(fixture.device, input));
+    test::check("SMAA with a depth step draws the same silhouette",
+        render(effects, fixture.device, image, settings, 1, silhouetteDepth));
+    test::check("That output reads back too", image.read(fixture.device, output));
+    const unsigned changedWithDepth = output.size() == input.size() ? difference(input, output) : 0;
+    printf("  SMAA low-contrast silhouette changed pixels: without depth=%u; with depth=%u\n",
+        changedWithoutDepth, changedWithDepth);
+    test::check("Depth predication smooths a silhouette that color alone leaves aliased",
+        changedWithoutDepth == 0 && changedWithDepth > 0);
+    for (UINT y = 0; y < imageSize; ++y)
+        for (UINT x = 0; x < imageSize; ++x)
+            input[y * imageSize + x] = 0x7f000000 | ((x + y) % 7 ? 96u : 100u) * 0x010101;
+    test::check("Faint texture uploads", image.upload(fixture.device, input));
+    test::check("SMAA with flat depth draws the faint texture",
+        render(effects, fixture.device, image, settings, 1, silhouetteDepth));
+    test::check("Faint texture output reads back", image.read(fixture.device, output));
+    test::check("A faint texture away from the depth step stays untouched", [&]() {
+        for (UINT y = 4; y < imageSize - 4; ++y)
+            for (UINT x = 12 + y / 2 + 4; x < imageSize - 4; ++x)
+                if (output[y * imageSize + x] != input[y * imageSize + x]) return false;
+        return true;
+    }());
+    post_fx::release(silhouetteDepth);
+
     settings.change(post_fx::antialiasing, post_fx::aaOff);
     for (UINT y = 0; y < imageSize; ++y)
         for (UINT x = 0; x < imageSize; ++x)
@@ -321,7 +361,7 @@ int main(int argc, char** argv) {
     for (unsigned plane = 0; plane < 2; ++plane) {
         effects.releaseResources();
         const float distance = plane == 0 ? 8.0f : 80.0f;
-        test::check("Synthetic planar depth uploads", uploadDepth(fixture.device, &depthTexture, distance));
+        test::check("Synthetic planar depth uploads", uploadDepth(fixture.device, &depthTexture, [=](UINT, UINT) { return distance; }));
         test::check("Striped blur input uploads", image.upload(fixture.device, input));
         test::check("First camera sample seeds history", renderBlur(effects, fixture.device, image, depthTexture, settings, 0.15f, 2));
         test::check("Rotating camera draws motion blur", renderBlur(effects, fixture.device, image, depthTexture, settings, 0, 2.033));

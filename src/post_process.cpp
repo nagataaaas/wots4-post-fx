@@ -196,6 +196,14 @@ HRESULT PostProcess::setLinearBlending(bool enabled) {
     if (FAILED(status)) return status;
     return device->SetRenderState(D3DRS_SRGBWRITEENABLE, value);
 }
+HRESULT PostProcess::sampleDepthByPoint() {
+    // Encoded depth must not be interpolated across surfaces.
+    for (auto filter : {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER}) {
+        const HRESULT status = device->SetSamplerState(1, filter, D3DTEXF_POINT);
+        if (FAILED(status)) return status;
+    }
+    return S_OK;
+}
 HRESULT PostProcess::bindPassState() {
     for (unsigned sampler = 0; sampler < effectSamplerCount; ++sampler) {
         const HRESULT status = device->SetTexture(sampler, nullptr);
@@ -223,11 +231,8 @@ HRESULT PostProcess::bindPassState() {
             if (FAILED(status)) return status;
         }
     }
-    // Encoded depth must not be interpolated across surfaces.
-    for (auto filter : {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER}) {
-        status = device->SetSamplerState(1, filter, D3DTEXF_POINT);
-        if (FAILED(status)) return status;
-    }
+    status = sampleDepthByPoint();
+    if (FAILED(status)) return status;
     const float dimensions[] = {1.0f / width, 1.0f / height, static_cast<float>(width), static_cast<float>(height)};
     return device->SetPixelShaderConstantF(shader_register::dimensions, dimensions, 1);
 }
@@ -252,7 +257,7 @@ HRESULT PostProcess::applyMotionBlur(IDirect3DTexture9* input, IDirect3DTexture9
     if (FAILED(status)) return status;
     return draw(scratchSurfaces[output], input, depth, shaders[blurShader]);
 }
-HRESULT PostProcess::applySmaa(IDirect3DTexture9* input, unsigned output) {
+HRESULT PostProcess::applySmaa(IDirect3DTexture9* input, IDirect3DTexture9* depth, unsigned output) {
     // Edge detection discards flat pixels. Clear every draw to remove old edges.
     HRESULT status = device->SetRenderTarget(0, smaaSurfaces[0]);
     if (FAILED(status)) return status;
@@ -261,7 +266,8 @@ HRESULT PostProcess::applySmaa(IDirect3DTexture9* input, unsigned output) {
     if (FAILED(status)) return status;
     status = device->Clear(0, nullptr, D3DCLEAR_TARGET, 0, 1, 0);
     if (FAILED(status)) return status;
-    status = draw(smaaSurfaces[0], input, nullptr, shaders[edgesShader]);
+    // Depth lowers the edge threshold at silhouettes; without it the threshold stays uniform.
+    status = draw(smaaSurfaces[0], input, depth, shaders[edgesShader]);
     if (FAILED(status)) return status;
     // The area lookup is filtered; the search lookup is read texel by texel.
     for (auto filter : {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER}) {
@@ -280,7 +286,10 @@ HRESULT PostProcess::applySmaa(IDirect3DTexture9* input, unsigned output) {
     if (FAILED(status)) return status;
     status = draw(scratchSurfaces[output], input, smaaTextures[1], shaders[neighborhoodShader]);
     if (FAILED(status)) return status;
-    return setLinearBlending(false);
+    status = setLinearBlending(false);
+    if (FAILED(status)) return status;
+    // The motion blur after SMAA reads depth from the sampler the area lookup filtered.
+    return sampleDepthByPoint();
 }
 HRESULT PostProcess::resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9* colorSurface) {
     // A 2:1 bilinear reduction averages the four independently rendered samples, in linear space.
@@ -299,25 +308,31 @@ HRESULT PostProcess::resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9*
     return draw(colorSurface, resolvedTexture, nullptr, shaders[copyShader]);
 }
 HRESULT PostProcess::renderPasses(IDirect3DTexture9* color, IDirect3DTexture9* depth, IDirect3DSurface9* colorSurface,
-    const Exposure& exposure, const CameraSample& camera, uint32_t method, uint32_t quality) {
+    const Exposure& exposure, const CameraSample& camera, uint32_t method, const Settings& settings) {
     HRESULT status = bindPassState();
     if (FAILED(status)) return status;
+    // Each pass reads the previous result and writes the other scratch texture. Anti-aliasing
+    // runs before the blur so it works on the scene's edges, not on blur streaks.
     IDirect3DTexture9* input = color;
     unsigned output = 0;
-    if (exposure.valid) {
-        status = applyMotionBlur(input, depth, exposure, camera, quality, output);
-        if (FAILED(status)) return status;
-        input = scratch[output++];
-    }
+    const auto advance = [&]() {
+        input = scratch[output];
+        output ^= 1;
+    };
     if (method == aaFxaa) {
         status = draw(scratchSurfaces[output], input, nullptr, shaders[fxaaShader]);
         if (FAILED(status)) return status;
-        input = scratch[output];
+        advance();
     }
     if (method == aaSmaa) {
-        status = applySmaa(input, output);
+        status = applySmaa(input, depthUsable(depth) ? depth : nullptr, output);
         if (FAILED(status)) return status;
-        input = scratch[output];
+        advance();
+    }
+    if (exposure.valid) {
+        status = applyMotionBlur(input, depth, exposure, camera, settings.value(blurQuality), output);
+        if (FAILED(status)) return status;
+        advance();
     }
     // The game's texture is written only after every effect pass succeeds.
     if (samplingFactor == 2) return resolveSamples(input, colorSurface);
@@ -352,7 +367,7 @@ HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* 
         history.clear();
         return stateCaptureFailed;
     }
-    result = renderPasses(color, depth, colorSurface, exposure, camera, method, settings.value(blurQuality));
+    result = renderPasses(color, depth, colorSurface, exposure, camera, method, settings);
     const bool restored = saved.restore();
     release(colorSurface);
     if (FAILED(result) || !restored) {

@@ -62,6 +62,9 @@ struct FakeDevice {
     bool blending = true, zWriting = true;
     DWORD requestedMask = 0xf;
     std::vector<Object*> created;
+    // What each draw read: its pixel shader, the texture on sampler 1 and that sampler's filter.
+    struct DrawRecord { Object* shader; Object* secondTexture; DWORD secondFilter; };
+    std::vector<DrawRecord> drawRecords;
 };
 HRESULT STDMETHODCALLTYPE unexpected(FakeDevice* device) { ++device->unexpected; return E_NOTIMPL; }
 struct FakeDirect3D { void** table; FakeDevice* device; ULONG references = 1; };
@@ -175,6 +178,7 @@ HRESULT STDMETHODCALLTYPE createTexture(FakeDevice* device, UINT width, UINT hei
 }
 HRESULT STDMETHODCALLTYPE draw(FakeDevice* device, D3DPRIMITIVETYPE, UINT, const void* vertices, UINT stride) {
     ++device->draws;
+    device->drawRecords.push_back({device->pixelShader, device->textures[1], device->samplerStates[1][D3DSAMP_MINFILTER]});
     if (device->renderStates[D3DRS_SRGBWRITEENABLE] && device->samplerStates[0][D3DSAMP_SRGBTEXTURE]) ++device->srgbDraws;
     for (const auto* texture : device->textures)
         if (texture && texture->surface == device->targets[0]) device->alias = true;
@@ -297,6 +301,20 @@ int main(int argc, char** argv) {
     const unsigned beforeBlur = fake.draws;
     effects.render(device, input, depthInput, camera(), 2.033, settings);
     test::check("Blur plus FXAA draws three independent passes", fake.draws == beforeBlur + 3 && sameState(fake, original));
+    // prepare() created the shaders first, in ShaderIndex order: copy, FXAA, blur, ...
+    Object* const copyShader = fake.created[0];
+    Object* const fxaaShader = fake.created[1];
+    Object* const blurShader = fake.created[2];
+    const auto drawnShaders = [&](unsigned count) {
+        std::vector<Object*> shaders;
+        for (size_t index = fake.drawRecords.size() - count; index < fake.drawRecords.size(); ++index)
+            shaders.push_back(fake.drawRecords[index].shader);
+        return shaders;
+    };
+    test::check("FXAA runs before the blur, which reads point-sampled depth",
+        drawnShaders(3) == std::vector<Object*>{fxaaShader, blurShader, copyShader} &&
+        fake.drawRecords[fake.drawRecords.size() - 2].secondTexture == &depth &&
+        fake.drawRecords[fake.drawRecords.size() - 2].secondFilter == D3DTEXF_POINT);
     const unsigned beforeMissingDepth = fake.draws;
     effects.render(device, input, nullptr, camera(), 2.066, settings);
     test::check("Missing depth skips blur while retaining FXAA", fake.draws == beforeMissingDepth + 2);
@@ -347,6 +365,22 @@ int main(int argc, char** argv) {
     const unsigned beforeSmaaReuse = fake.creates;
     effects.render(device, input, nullptr, {}, 5.033, settings);
     test::check("SMAA reuses targets/lookups and clears stale edges every draw", fake.creates == beforeSmaaReuse && fake.clears == 2);
+    test::check("Without matching depth, SMAA edges run without predication",
+        fake.drawRecords[fake.drawRecords.size() - 4].secondTexture == nullptr);
+    settings.change(post_fx::motionBlur, 1);
+    effects.render(device, input, depthInput, camera(), 5.04, settings);
+    const unsigned beforeSmaaBlur = fake.draws;
+    effects.render(device, input, depthInput, camera(), 5.05, settings);
+    test::check("SMAA then blur draws edges, weights, neighborhood, blur and copy", fake.draws == beforeSmaaBlur + 5);
+    const auto smaaEdges = fake.drawRecords[fake.drawRecords.size() - 5];
+    const auto smaaWeights = fake.drawRecords[fake.drawRecords.size() - 4];
+    const auto blurAfterSmaa = fake.drawRecords[fake.drawRecords.size() - 2];
+    test::check("SMAA edge detection reads point-sampled depth for predication",
+        smaaEdges.secondTexture == &depth && smaaEdges.secondFilter == D3DTEXF_POINT);
+    test::check("The blur after SMAA reads depth by point, not with the area lookup's linear filter",
+        smaaWeights.secondFilter == D3DTEXF_LINEAR && blurAfterSmaa.secondTexture == &depth &&
+        blurAfterSmaa.secondFilter == D3DTEXF_POINT && sameState(fake, original));
+    settings.change(post_fx::motionBlur, 0);
     fake.failDraw = fake.draws + 2;
     const unsigned beforeWeightsFailure = fake.draws;
     test::check("Weight-pass failure skips neighborhood blending and game-color copy", FAILED(effects.render(device, input, nullptr, {}, 5.066, settings)) &&
