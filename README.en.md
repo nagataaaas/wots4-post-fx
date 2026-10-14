@@ -21,6 +21,24 @@ Adds anti-aliasing, sharpening and camera motion blur to the 3D image. Text and 
 - While the game window is minimized or in the background, only motion blur pauses; anti-aliasing and SSAA continue.
 - After scene changes, camera changes, abrupt view changes, device recovery and similar interruptions, motion blur pauses briefly and then resumes.
 
+## Comparison
+
+### Anti-aliasing
+
+Jagged edges on the ship's rigging and on the characters' outlines are reduced.
+
+| Off | On |
+| --- | --- |
+| ![Anti-aliasing off](docs/assets/anti_aliasing_off.jpg) | ![Anti-aliasing on](docs/assets/anti_aliasing_on.jpg) |
+
+### Motion blur
+
+While the camera turns, the background and the people around blur along the motion. Blur on the protagonist in the foreground is reduced.
+
+| Off | On |
+| --- | --- |
+| ![Motion blur off](docs/assets/motion_blur_off.jpg) | ![Motion blur on](docs/assets/motion_blur_on.jpg) |
+
 ## Settings
 
 The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen and in-game options. Changes other than SSAA apply to the next draw. Save the options, exit the game and restart to apply SSAA changes. While SSAA differs from the setting in use, a notice below it says a restart is needed.
