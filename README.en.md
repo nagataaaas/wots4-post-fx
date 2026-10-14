@@ -4,7 +4,7 @@
 
 A Mod for the Steam version of *Way of the Samurai 4* that adds anti-aliasing and camera motion blur.
 
-This prototype has been implemented and tested outside the game. Image quality, the options tab, UI exclusion across screens, device recovery and compatibility with other Mods still require in-game verification. No GitHub publication or release has been made.
+This prototype has been tested outside the game. Image quality, the options tab, UI exclusion across screens, device recovery and compatibility with other Mods still require in-game verification.
 
 ## Features
 
@@ -13,9 +13,10 @@ This prototype has been implemented and tested outside the game. Image quality, 
 - SSAA renders the 3D scene at twice the resolution on each axis, then reduces it by averaging four pixels. It can be combined with FXAA or SMAA. UI resolution stays unchanged.
 - Motion blur follows camera movement. It does not blur independently moving characters or swords while the camera is stationary.
 - Blur strength and maximum width are reduced near the camera. This distance-based adjustment applies to the player, nearby NPCs and foreground objects.
-- Enable each effect independently. Motion blur runs before FXAA or SMAA, followed by SSAA reduction and composition before 2D and UI drawing.
+- Enable each effect independently. The effects apply to the 3D image, not to text or the UI.
 - Draws without usable camera or depth data skip motion blur; anti-aliasing remains independent.
-- Scene changes, camera changes, abrupt view changes, focus loss, device recovery and similar interruptions discard blur history.
+- While the game window is minimized or in the background, only motion blur pauses; anti-aliasing and SSAA continue.
+- After scene changes, camera changes, abrupt view changes, device recovery and similar interruptions, motion blur pauses briefly and then resumes.
 
 ## Settings
 
@@ -31,7 +32,7 @@ The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen
 
 Strength changes exposure, and quality changes the sample count (4 / 8 / 12). Higher quality increases GPU work. Actual rendering time and FPS have not been measured.
 
-SSAA quadruples the rendered pixel count and significantly increases GPU work and memory usage. Creation falls back to native resolution with a log message if the enlarged scene exceeds device texture dimensions or the 64 Mi-pixel scene limit. This dimension check does not guarantee successful memory allocation. Compare SMAA alone first, then try SSAA if performance permits.
+SSAA quadruples the rendered pixel count and significantly increases GPU work and memory usage. If the enlarged scene exceeds device texture dimensions or the 64 Mi-pixel scene limit, the scene is drawn at native resolution. Even within these limits, the GPU may not have enough memory. Compare SMAA alone first, then try SSAA if performance permits.
 
 Strength and quality are retained while blur is off. Values are saved to `mods/post_fx/config.ini` when the game saves its options. The file is not bundled; it is generated when changed settings are first saved. Missing files and invalid values use defaults.
 
@@ -58,9 +59,9 @@ cmake --build build --config Release
 ctest --test-dir build -C Release -LE needs_exe --output-on-failure
 ```
 
-Output: `build/game/mods/post_fx/mod.dll`. For an in-game trial, place it at `mods/post_fx/mod.dll` in a game installation with the ModLoader installed. Development builds do not automatically copy files to the installation.
+Output: `build/game/mods/post_fx/mod.dll`. For an in-game trial, place it at `mods/post_fx/mod.dll` in a game installation with the ModLoader installed.
 
-The CMake target has `NO_RELEASE` while the Mod is unreleased. See [docs/VALIDATION.md](docs/VALIDATION.md) for test coverage and remaining checks.
+See [docs/VALIDATION.md](docs/VALIDATION.md) for test coverage and remaining checks.
 
 ## License
 
