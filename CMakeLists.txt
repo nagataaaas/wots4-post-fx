@@ -35,14 +35,15 @@ wots4_add_mod(post_fx NO_RELEASE
     SOURCES src/mod.cpp src/settings.cpp src/game_render.cpp src/post_process.cpp src/device_state.cpp
         "${CMAKE_CURRENT_BINARY_DIR}/shaders.rc"
     DEF src/mod.def LIBS wots4_minhook d3d9
-    FILES README.md README.en.md
+    FILES config.ini README.md README.en.md
     LICENSES docs/licenses/minhook.txt docs/licenses/smaa.txt)
 target_include_directories(mod_post_fx PRIVATE src)
 target_compile_definitions(mod_post_fx PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 add_dependencies(mod_post_fx post_fx_shaders)
 
 if(WOTS4_BUILD_TESTS)
-    wots4_add_probe(post_fx_settings_probe SOURCES tests/settings_probe.cpp src/settings.cpp INCLUDES src)
+    wots4_add_probe(post_fx_settings_probe SOURCES tests/settings_probe.cpp src/settings.cpp INCLUDES src
+        ARGS "${CMAKE_CURRENT_SOURCE_DIR}/config.ini")
     wots4_add_probe(post_fx_motion_probe SOURCES tests/motion_probe.cpp INCLUDES src)
     wots4_add_probe(post_fx_device_probe SOURCES tests/device_probe.cpp src/device_state.cpp src/post_process.cpp src/settings.cpp
         INCLUDES src LIBS d3d9 ARGS $<TARGET_FILE:mod_post_fx>)

@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
     std::filesystem::create_directories(fixtureDirectory);
     const auto config = fixtureDirectory / "config.ini";
     std::filesystem::remove(config);
-    if (scenario == "ssaa") WritePrivateProfileStringW(L"antialiasing", L"supersampling", L"1", config.c_str());
+    if (scenario == "ssaa") WritePrivateProfileStringW(L"antialiasing", L"supersampling", L"2x", config.c_str());
     const auto directory = fixtureDirectory.wstring() + L"\\";
     const auto module = LoadLibraryA(argv[2]);
     const auto initialize = module ? reinterpret_cast<wots4::Initialize>(GetProcAddress(module, "Wots4ModInitialize")) : nullptr;

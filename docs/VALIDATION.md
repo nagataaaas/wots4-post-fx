@@ -7,7 +7,7 @@ All tests run without starting the game. CI runs the synthetic tests. Tests labe
 ## Outside the game
 
 - All six embedded pixel shaders compile for Shader Model 3 using the Windows SDK compiler.
-- Settings tests cover localized titles, five options, the toggle ABI, defaults, range validation, history invalidation, deferred persistence and independent SMAA/SSAA INI roundtrips.
+- Settings tests cover localized titles, five options, the toggle ABI, defaults, choice-name validation (case-insensitive names; numbers, unknown and truncated values fall back to defaults), history invalidation, deferred persistence, independent SMAA/SSAA INI roundtrips, and the bundled config.ini (defaults without warnings; saving updates it in place and keeps its comments).
 - Math tests cover matrix inversion, elapsed-time exposure, exposure bounds and history invalidation on camera, scene, projection, resource and timing changes.
 - SSAA sizing tests cover doubled axes, supported 4K display dimensions, device limits, pixel budgets, overflow, empty sizes and unsupported sample factors.
 - Fake D3D9 COM tests cover pass order, input/output separation, half-texel vertices, complete restoration of touched states, preservation of the depth-mask hook's tracked state, resource reuse, draw/capture/creation failures, device loss without a failure report, Reset release and resolution changes. These tests use no GPU.

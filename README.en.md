@@ -34,20 +34,17 @@ Strength changes exposure, and quality changes the sample count (4 / 8 / 12). Hi
 
 SSAA quadruples the rendered pixel count and significantly increases GPU work and memory usage. If the enlarged scene exceeds device texture dimensions or the 64 Mi-pixel scene limit, the scene is drawn at native resolution. Even within these limits, the GPU may not have enough memory. Compare SMAA alone first, then try SSAA if performance permits.
 
-Strength and quality are retained while blur is off. Values are saved to `mods/post_fx/config.ini` when the game saves its options. The file is not bundled; it is generated when changed settings are first saved. Missing files and invalid values use defaults.
+Strength and quality are retained while blur is off. The values live in `mods/post_fx/config.ini`, which the game writes when it saves its options. Exit the game before editing the file directly. Values are not case-sensitive. Missing keys and invalid values use the defaults.
 
-```ini
-[antialiasing]
-method=0
-supersampling=0
+| Section | Key | Default | Description |
+| --- | --- | --- | --- |
+| `antialiasing` | `method` | `off` | Anti-aliasing: `off` / `fxaa` / `smaa` |
+| `antialiasing` | `supersampling` | `off` | SSAA: `off` / `2x` (twice per axis, 4 samples). Applied at the next game start |
+| `motion_blur` | `enabled` | `0` | Motion blur: `1` on, `0` off |
+| `motion_blur` | `strength` | `normal` | Blur strength: `low` / `normal` / `high` |
+| `motion_blur` | `quality` | `normal` | Blur quality: `low` / `normal` / `high` |
 
-[motion_blur]
-enabled=0
-strength=1
-quality=1
-```
-
-`method` is 0 Off / 1 FXAA / 2 SMAA, `supersampling` is 0 Off / 1 twice per axis, `enabled` is 0 Off / 1 On, and `strength` and `quality` are 0 Low / 1 Normal / 2 High. Exit the game before editing the file directly.
+To keep your current settings when updating, replace only `mod.dll` and do not overwrite `mods/post_fx/config.ini`.
 
 ## Building and placement
 

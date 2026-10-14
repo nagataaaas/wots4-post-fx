@@ -34,20 +34,17 @@ Steam 版『侍道4』に、アンチエイリアスとカメラの動きによ�
 
 SSAA は描画する画素数が4倍になり、GPU の負荷とメモリ使用量が大きく増えます。デバイスの最大テクスチャ寸法、または拡大後のシーンの上限（64 Mi画素）を超える場合は通常の解像度で描画します。上限内でも、GPU のメモリが足りるとは限りません。まず SMAA 単独で比較し、余裕があれば SSAA を試してください。
 
-ブラー無効時も強さ・品質の値を保持します。設定値はゲームのオプション保存に合わせて `mods/post_fx/config.ini` に保存します。設定ファイルは同梱せず、変更した設定を初めて保存したときに生成します。ファイルがない場合や不正な値の場合は既定値を使います。
+ブラー無効時も強さ・品質の値を保持します。設定値は `mods/post_fx/config.ini` にあり、ゲームがオプションを保存するときに書き込みます。直接編集する場合はゲームを終了してください。値は大文字・小文字を区別しません。項目がない場合や不正な値の場合は既定値を使います。
 
-```ini
-[antialiasing]
-method=0
-supersampling=0
+| セクション | 項目 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `antialiasing` | `method` | `off` | アンチエイリアス。`off`（無効）/ `fxaa` / `smaa` |
+| `antialiasing` | `supersampling` | `off` | SSAA。`off`（無効）/ `2x`（縦横2倍・4サンプル）。次の起動から反映 |
+| `motion_blur` | `enabled` | `0` | モーションブラー。`1` で有効、`0` で無効 |
+| `motion_blur` | `strength` | `normal` | ブラーの強さ。`low` / `normal` / `high` |
+| `motion_blur` | `quality` | `normal` | ブラーの品質。`low` / `normal` / `high` |
 
-[motion_blur]
-enabled=0
-strength=1
-quality=1
-```
-
-`method` は 0 無効 / 1 FXAA / 2 SMAA、`supersampling` は 0 無効 / 1 縦横2倍、`enabled` は 0 無効 / 1 有効、`strength` と `quality` は 0 弱・低 / 1 標準 / 2 強・高です。直接編集する場合はゲームを終了してください。
+更新するときに今の設定を残したい場合は、`mods/post_fx/config.ini` を上書きせずに、`mod.dll` だけを置き換えてください。
 
 ## ビルドと配置
 

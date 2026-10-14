@@ -1,7 +1,7 @@
 #include "settings.h"
 #include <cstdio>
 #include <cwchar>
-#include <cerrno>
+#include <iterator>
 
 namespace post_fx {
 namespace {
@@ -17,8 +17,40 @@ const wots4::OptionItem items[] = {
     {wots4::optionChoice, {L"ブラーの品質", L"Blur Quality"}, qualities, 3, 1},
     {wots4::optionChoice, {L"SSAA（保存後に再起動）", L"SSAA (save and restart)"}, ssaaChoices, 2, 0},
 };
-const wchar_t* sections[] = {L"antialiasing", L"motion_blur", L"motion_blur", L"motion_blur", L"antialiasing"};
-const wchar_t* keys[] = {L"method", L"enabled", L"strength", L"quality", L"supersampling"};
+// config.ini spells each choice by name; the array index is the option value.
+// enabled keeps 0/1 like every Mod's on/off key (a toggle's value 1 is "on").
+const wchar_t* const methodNames[] = {L"off", L"fxaa", L"smaa"};
+const wchar_t* const enabledNames[] = {L"0", L"1"};
+const wchar_t* const levelNames[] = {L"low", L"normal", L"high"};
+const wchar_t* const supersamplingNames[] = {L"off", L"2x"};
+struct ConfigKey { const wchar_t* section; const wchar_t* key; const wchar_t* const* names; };
+const ConfigKey configKeys[] = {
+    {L"antialiasing", L"method", methodNames},
+    {L"motion_blur", L"enabled", enabledNames},
+    {L"motion_blur", L"strength", levelNames},
+    {L"motion_blur", L"quality", levelNames},
+    {L"antialiasing", L"supersampling", supersamplingNames},
+};
+static_assert(std::size(configKeys) == optionCount && std::size(items) == optionCount);
+// Longer than any choice name, so a truncated read is never mistaken for a valid one.
+constexpr DWORD valueBufferLength = 16;
+
+bool findChoice(const ConfigKey& config, uint32_t choiceCount, const wchar_t* text, uint32_t& value) {
+    for (uint32_t choice = 0; choice < choiceCount; ++choice) {
+        if (_wcsicmp(text, config.names[choice])) continue;
+        value = choice;
+        return true;
+    }
+    return false;
+}
+std::wstring acceptedNames(const ConfigKey& config, uint32_t choiceCount) {
+    std::wstring names;
+    for (uint32_t choice = 0; choice < choiceCount; ++choice) {
+        if (choice) names += L", ";
+        names += config.names[choice];
+    }
+    return names;
+}
 }
 
 const wots4::OptionItem* Settings::definitions() { return items; }
@@ -28,22 +60,20 @@ void Settings::initialize(const wchar_t* directory, LogFunction logger) {
     log = logger;
     dirty = false;
     for (uint32_t item = 0; item < optionCount; ++item) {
+        const ConfigKey& config = configKeys[item];
+        const uint32_t choiceCount = items[item].choiceCount;
         values[item] = items[item].defaultValue;
-        wchar_t text[32];
-        const DWORD length = GetPrivateProfileStringW(sections[item], keys[item], L"", text, _countof(text), path.c_str());
+        wchar_t text[valueBufferLength];
+        const DWORD length = GetPrivateProfileStringW(config.section, config.key, L"", text, valueBufferLength, path.c_str());
         if (!length) continue;
-        wchar_t* end = nullptr;
-        errno = 0;
-        const unsigned long number = std::wcstoul(text, &end, 10);
-        if (length < _countof(text) - 1 && text[0] >= L'0' && text[0] <= L'9' && end != text && *end == L'\0' && !errno &&
-            number < items[item].choiceCount) {
-            values[item] = number;
-        } else if (log) {
-            char message[256];
-            sprintf_s(message, "[WARN] Invalid config.ini [%ls] %ls; using default value %u.",
-                sections[item], keys[item], items[item].defaultValue);
-            log(message);
-        }
+        const bool truncated = length >= valueBufferLength - 1;
+        if (!truncated && findChoice(config, choiceCount, text, values[item])) continue;
+        if (!log) continue;
+        char message[256];
+        sprintf_s(message, "[WARN] config.ini [%ls] %ls=%ls%ls is not one of %ls; using the default %ls.",
+            config.section, config.key, text, truncated ? L"..." : L"", acceptedNames(config, choiceCount).c_str(),
+            config.names[items[item].defaultValue]);
+        log(message);
     }
     invalidateHistory();
 }
@@ -80,14 +110,14 @@ bool Settings::registerPage(const wots4::ModContext& context) {
 void Settings::save() {
     if (!dirty) return;
     for (uint32_t item = 0; item < optionCount; ++item) {
-        wchar_t text[16];
-        swprintf_s(text, L"%u", values[item]);
-        if (WritePrivateProfileStringW(sections[item], keys[item], text, path.c_str())) continue;
+        const ConfigKey& config = configKeys[item];
+        // Updates the key in place, keeping the comments of the bundled config.ini.
+        if (WritePrivateProfileStringW(config.section, config.key, config.names[values[item]], path.c_str())) continue;
         if (log) {
             char message[256];
             sprintf_s(message, "[ERROR] Could not save config.ini [%ls] %ls (Windows error %lu); "
                 "settings remain active and will be retried on the next options save.",
-                sections[item], keys[item], GetLastError());
+                config.section, config.key, GetLastError());
             log(message);
         }
         return;
