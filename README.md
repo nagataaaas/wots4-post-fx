@@ -46,7 +46,23 @@ SSAA は描画する画素数が4倍になり、GPU の負荷とメモリ使用�
 
 更新するときに今の設定を残したい場合は、`mods/post_fx/config.ini` を上書きせずに、`mod.dll` だけを置き換えてください。
 
-## ビルドと配置
+## インストール（開発版）
+
+> [!WARNING]
+> 事前に [wots4-mods（ModLoader）](https://github.com/nagataaaas/wots4-mods) を導入してください。
+
+試作版のため、Release にはまだ入れていません。次の [ビルド](#ビルド) の手順でビルドしてから入れてください。
+
+1. ゲームを終了してください。
+2. ビルドで得られた `build/game/mods/post_fx/` フォルダを、侍道4のインストールフォルダ（`WayOfTheSamurai4.exe` がある場所）の `mods` フォルダへコピーしてください。
+3. `{侍道4インストールフォルダ}/mods/post_fx/mod.dll` があることを確認し、ゲームを起動してください。
+
+## アンインストール
+
+1. ゲームを終了してください。
+2. `{侍道4インストールフォルダ}/mods/post_fx/` フォルダを削除してください。中の設定（`config.ini`）も消えます。
+
+## ビルド
 
 [wots4-mods（ModLoader）](https://github.com/nagataaaas/wots4-mods) の SDK、MSVC、Windows SDK（`fxc.exe` を含む）が必要です。x86 / C++17 でビルドします。シェーダーはビルド時にコンパイルして DLL に埋め込むため、実行時にシェーダーコンパイラや追加のシェーダーファイルは不要です。
 
@@ -56,7 +72,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release -LE needs_exe --output-on-failure
 ```
 
-出力は `build/game/mods/post_fx/mod.dll`。ゲームで試す際は、ModLoader を導入したゲームの `mods/post_fx/mod.dll` に配置します。
+出力は `build/game/mods/post_fx/mod.dll`。
 
 試験の内容と残る確認事項は [docs/VALIDATION.md](docs/VALIDATION.md) を参照してください。
 

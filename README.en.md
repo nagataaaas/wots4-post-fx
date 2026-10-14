@@ -46,7 +46,23 @@ Strength and quality are retained while blur is off. The values live in `mods/po
 
 To keep your current settings when updating, replace only `mod.dll` and do not overwrite `mods/post_fx/config.ini`.
 
-## Building and placement
+## Installation (development version)
+
+> [!WARNING]
+> Install [wots4-mods (ModLoader)](https://github.com/nagataaaas/wots4-mods) first.
+
+This Mod is a prototype and is not included in Releases yet. Build it following [Building](#building) below, then install it.
+
+1. Close the game.
+2. Copy the built `build/game/mods/post_fx/` folder into the `mods` folder in the game's installation folder (the folder containing `WayOfTheSamurai4.exe`).
+3. Confirm that `{game installation folder}/mods/post_fx/mod.dll` exists, then start the game.
+
+## Uninstallation
+
+1. Close the game.
+2. Delete the `{game installation folder}/mods/post_fx/` folder. The settings in it (`config.ini`) are deleted too.
+
+## Building
 
 Requires the [wots4-mods (ModLoader)](https://github.com/nagataaaas/wots4-mods) SDK, MSVC, and the Windows SDK including `fxc.exe`. Builds target x86 and C++17. Shaders are compiled and embedded in the DLL at build time; no shader compiler or additional shader files are required at runtime.
 
@@ -56,7 +72,7 @@ cmake --build build --config Release
 ctest --test-dir build -C Release -LE needs_exe --output-on-failure
 ```
 
-Output: `build/game/mods/post_fx/mod.dll`. For an in-game trial, place it at `mods/post_fx/mod.dll` in a game installation with the ModLoader installed.
+Output: `build/game/mods/post_fx/mod.dll`.
 
 See [docs/VALIDATION.md](docs/VALIDATION.md) for test coverage and remaining checks.
 
