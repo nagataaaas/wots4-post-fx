@@ -1,6 +1,6 @@
 # Validation
 
-Status: implemented and tested outside the game; in-game verification pending.
+Status: implemented, tested outside the game and confirmed in the game. Rendering time and FPS have not been measured.
 
 All tests run without starting the game. CI runs the synthetic tests. Tests labeled `needs_exe` need a local copy of the executable, and the test labeled `gpu` needs a Direct3D 9 hardware device (it skips when none is available). CI excludes both labels.
 
@@ -21,19 +21,19 @@ All tests run without starting the game. CI runs the synthetic tests. Tests labe
 - Tests labeled `needs_exe` map a copied executable, replace the selected function bodies with inert returns and load the Mod. They cover the export, API validation, hook claims, calling conventions, unsupported bytes, conflicting claims, failed registration, rollback, and the original Steam image's header size. No game entry point, TLS or original frame/camera/D3D body is executed.
 - The scene-creator tests verify scaled arguments, native fallback, restart-only selection, layout rejection and rollback when the additional hook conflicts.
 
-The SDK integration exposes one page in both options menus. Its actual appearance remains unverified in the game.
+The SDK integration exposes one page in both options menus.
 
-FXAA uses a relative edge threshold of 1/16, a minimum threshold of 1/128, a subpixel trim of 1/8 and a maximum subpixel blend of 0.75. Endpoint search uses nine distances through 16 pixels. Fine detail can become softer; in-game quality and rendering cost still need verification.
+FXAA uses a relative edge threshold of 1/16, a minimum threshold of 1/128, a subpixel trim of 1/8 and a maximum subpixel blend of 0.75. Endpoint search uses nine distances through 16 pixels. Fine detail can become softer. Rendering cost has not been measured.
 
-## In-game checks still required
+## In the game
 
-Verify Off/FXAA/SMAA, each sharpening level (including edge halos), SMAA on silhouettes against similar colors and on distant geometry, SSAA alone and combinations with blur on the same scene, all four DoF/HDR combinations, UI text, fine edges, transparent effects, sky, title/loading/video/event/night-crawling screens, camera cuts, pause/resume, focus recovery, resolution changes and existing rendering Mods. Motion blur intentionally skips missing, ambiguous or unsupported camera/depth inputs, partial camera ports, and frames drawn while the game window is minimized or in the background; anti-aliasing and the SSAA resolve continue in those frames.
+The options page, anti-aliasing (FXAA, SMAA), sharpening, SSAA and camera motion blur have been confirmed in the game. Rendering time, FPS and GPU memory use have not been measured. Motion blur intentionally skips missing, ambiguous or unsupported camera/depth inputs, partial camera ports, and frames drawn while the game window is minimized or in the background; anti-aliasing and the SSAA resolve continue in those frames.
 
 The passes read back the device state they change so they can restore it. If the Direct3D 9 runtime refuses those reads, every pass is skipped and one error is logged.
 
-SSAA changes are saved for the next game start. The scene creator doubles raw color, encoded depth and both postprocess targets; dependent depth/stencil buffers and existing effect targets follow their actual source sizes. Display/UI targets remain native-sized. A shader resolve averages each 2x2 footprint in linear light when the device supports sRGB conversion, then replicates the resolved pixel into the existing scene texture for the game's final scene copy. This adds a reduction and a full-resolution write pass. Confirm actual game target sizes, downsample alignment, allocation success and existing HDR/DoF sampling offsets in-game. Device dimension limits and a 64 Mi-pixel budget reject oversized requests; passing these limits does not guarantee enough memory. GPU memory consumption and FPS remain unmeasured.
+SSAA changes are saved for the next game start. The scene creator doubles raw color, encoded depth and both postprocess targets; dependent depth/stencil buffers and existing effect targets follow their actual source sizes. Display/UI targets remain native-sized. A shader resolve averages each 2x2 footprint in linear light when the device supports sRGB conversion, then replicates the resolved pixel into the existing scene texture for the game's final scene copy. This adds a reduction and a full-resolution write pass. Device dimension limits and a 64 Mi-pixel budget reject oversized requests; passing these limits does not guarantee enough memory. GPU memory consumption and FPS remain unmeasured.
 
-The exposure values are 8/16/24 ms, capped to one draw interval. Maximum distant blur width is 32 pixels. Within 8 camera-distance units the exposure multiplier is 0.1 and width limit is 3 pixels; both smoothly reach full strength by 50 units. Depth boundaries use camera-space depth differences, so adjacent points on a flat surface are not mistaken for separate depths. These thresholds need in-game visual tuning. Actual CPU/GPU time and FPS have not been measured.
+The exposure values are 8/16/24 ms, capped to one draw interval. Maximum distant blur width is 32 pixels. Within 8 camera-distance units the exposure multiplier is 0.1 and width limit is 3 pixels; both smoothly reach full strength by 50 units. Depth boundaries use camera-space depth differences, so adjacent points on a flat surface are not mistaken for separate depths. Actual CPU/GPU time and FPS have not been measured.
 
 Shader and scratch resources are created only on first enabled use or device/target changes. Ordinary draws do not allocate CPU heap memory, read images back to the CPU, write files or format log strings. Diagnostics are rate-limited and reported from the update callback.
 
