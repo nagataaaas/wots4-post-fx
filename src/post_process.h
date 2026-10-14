@@ -4,13 +4,16 @@
 #include "settings.h"
 
 namespace post_fx {
+// render() returns this when the device state that the passes change could not be read back.
+inline constexpr HRESULT stateCaptureFailed = MAKE_HRESULT(SEVERITY_ERROR, FACILITY_ITF, 0x201);
+
 class PostProcess {
 public:
     bool initialize(HMODULE module);
     void releaseResources();
     void clearHistory() { history.clear(); }
-    // S_FALSE: nothing was drawn. A failure suspends the passes until device Reset
-    // or a target size/format change.
+    // S_FALSE: nothing was drawn. A failure suspends the failed passes until device Reset
+    // or a target size/format change; a failed SMAA setup stops only SMAA.
     HRESULT render(IDirect3DDevice9* device, IDirect3DTexture9* color, IDirect3DTexture9* depth,
         const CameraSample& camera, double seconds, const Settings& settings, unsigned supersampleFactor = 1);
     bool failed() const { return suspended; }
@@ -19,6 +22,8 @@ private:
     enum ShaderIndex : unsigned { copyShader, fxaaShader, blurShader, edgesShader, weightsShader, neighborhoodShader, shaderCount };
     HRESULT prepare(IDirect3DDevice9* device, const D3DSURFACE_DESC& description, unsigned supersampleFactor);
     HRESULT prepareSmaa();
+    HRESULT ensureSmaa();
+    void releaseSmaa();
     bool depthUsable(IDirect3DTexture9* depth) const;
     Exposure advanceHistory(const CameraSample& camera, IDirect3DTexture9* depth, double seconds, const Settings& settings);
     HRESULT renderPasses(IDirect3DTexture9* color, IDirect3DTexture9* depth, IDirect3DSurface9* colorSurface,
@@ -45,6 +50,7 @@ private:
     unsigned samplingFactor = 1;
     D3DFORMAT format = D3DFMT_UNKNOWN;
     bool suspended = false;
+    bool smaaUnavailable = false;
     MotionHistory history;
 };
 }

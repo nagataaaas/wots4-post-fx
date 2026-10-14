@@ -53,20 +53,24 @@ bool PostProcess::initialize(HMODULE module) {
     }
     return true;
 }
-void PostProcess::releaseResources() {
-    for (auto& surface : scratchSurfaces) release(surface);
-    for (auto& texture : scratch) release(texture);
-    for (auto& shader : shaders) release(shader);
+void PostProcess::releaseSmaa() {
     for (auto& surface : smaaSurfaces) release(surface);
     for (auto& texture : smaaTextures) release(texture);
     release(areaTexture);
     release(searchTexture);
+}
+void PostProcess::releaseResources() {
+    for (auto& surface : scratchSurfaces) release(surface);
+    for (auto& texture : scratch) release(texture);
+    for (auto& shader : shaders) release(shader);
+    releaseSmaa();
     release(resolvedSurface);
     release(resolvedTexture);
     device = nullptr;
     width = height = targetCount = 0;
     format = D3DFMT_UNKNOWN;
     suspended = false;
+    smaaUnavailable = false;
     history.clear();
 }
 HRESULT PostProcess::prepare(IDirect3DDevice9* currentDevice, const D3DSURFACE_DESC& description, unsigned factor) {
@@ -124,6 +128,15 @@ HRESULT PostProcess::prepareSmaa() {
     if (FAILED(result)) return result;
     return loadLookup(device, SEARCHTEX_WIDTH, SEARCHTEX_HEIGHT, D3DFMT_L8,
         searchTexBytes, SEARCHTEX_PITCH, &searchTexture);
+}
+HRESULT PostProcess::ensureSmaa() {
+    if (smaaUnavailable) return S_OK;  // Already reported; retried after Reset or a target change.
+    const HRESULT result = prepareSmaa();
+    if (SUCCEEDED(result)) return S_OK;
+    // Only SMAA stops. Blur, FXAA and SSAA do not need its targets or lookups.
+    releaseSmaa();
+    smaaUnavailable = true;
+    return result;
 }
 bool PostProcess::depthUsable(IDirect3DTexture9* depth) const {
     D3DSURFACE_DESC description{};
@@ -298,23 +311,18 @@ HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* 
     HRESULT result = currentDevice->TestCooperativeLevel();
     if (FAILED(result)) {
         releaseResources();
-        return result;
+        // A lost device is expected (for example Alt+Tab in full screen); the game resets it.
+        return result == D3DERR_DEVICELOST || result == D3DERR_DEVICENOTRESET ? S_FALSE : result;
     }
     D3DSURFACE_DESC description{};
     result = color->GetLevelDesc(0, &description);
     if (FAILED(result)) return result;
     result = prepare(currentDevice, description, factor);
     if (FAILED(result)) return result;
-    const uint32_t method = settings.value(antialiasing);
-    if (method == aaSmaa) {
-        result = prepareSmaa();
-        if (FAILED(result)) {
-            suspended = true;
-            return result;
-        }
-    }
+    const HRESULT smaaSetup = settings.value(antialiasing) == aaSmaa ? ensureSmaa() : S_OK;
+    const uint32_t method = settings.value(antialiasing) == aaSmaa && smaaUnavailable ? aaOff : settings.value(antialiasing);
     const Exposure exposure = advanceHistory(camera, depth, seconds, settings);
-    if (!exposure.valid && method == aaOff && factor == 1) return S_FALSE;
+    if (!exposure.valid && method == aaOff && factor == 1) return FAILED(smaaSetup) ? smaaSetup : S_FALSE;
     IDirect3DSurface9* colorSurface = nullptr;
     result = color->GetSurfaceLevel(0, &colorSurface);
     if (FAILED(result)) return result;
@@ -322,7 +330,8 @@ HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* 
     if (!saved.capture(targetCount)) {
         release(colorSurface);
         suspended = true;
-        return E_FAIL;
+        history.clear();
+        return stateCaptureFailed;
     }
     result = renderPasses(color, depth, colorSurface, exposure, camera, method, settings.value(blurQuality));
     const bool restored = saved.restore();
@@ -331,6 +340,7 @@ HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* 
         suspended = true;
         history.clear();
     }
-    return restored ? result : E_FAIL;
+    if (!restored) return E_FAIL;
+    return SUCCEEDED(result) && FAILED(smaaSetup) ? smaaSetup : result;
 }
 }

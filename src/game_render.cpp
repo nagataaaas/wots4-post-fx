@@ -122,10 +122,18 @@ bool GameRender::install(const wots4::ModContext& context, Settings& options, Po
         return false;
     }
     LARGE_INTEGER frequency{};
-    if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) return false;
+    if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0) {
+        log("[ERROR] The high-resolution timer needed for motion blur is unavailable; Post FX was not installed.");
+        return false;
+    }
     clockFrequency = static_cast<double>(frequency.QuadPart);
     const MH_STATUS status = MH_Initialize();
-    if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) return false;
+    if (status != MH_OK && status != MH_ERROR_ALREADY_INITIALIZED) {
+        char message[128];
+        sprintf_s(message, "[ERROR] MinHook could not be initialized (status %d); Post FX was not installed.", static_cast<int>(status));
+        log(message);
+        return false;
+    }
     active = this;
     return installHooks();
 }
@@ -319,10 +327,15 @@ bool __fastcall GameRender::recreate(void* renderer, void*) {
 
 void GameRender::report() {
     if (FAILED(pendingError) && !errorReported) {
-        char message[256];
-        sprintf_s(message, "[WARN] Post FX rendering failed (HRESULT 0x%08lx); effects are skipped. "
-            "Suspended passes retry after device Reset or a target size/format change.", static_cast<unsigned long>(pendingError));
-        log(message);
+        if (pendingError == stateCaptureFailed) {
+            log("[ERROR] Post FX could not read the device state it must restore; "
+                "all passes are skipped until the device is reset or the resolution changes.");
+        } else {
+            char message[256];
+            sprintf_s(message, "[WARN] A Post FX pass failed (HRESULT 0x%08lx); the failed pass is skipped "
+                "until the device is reset or the resolution changes.", static_cast<unsigned long>(pendingError));
+            log(message);
+        }
         errorReported = true;
     }
     if (cameraWarningPending && !cameraWarningReported) {

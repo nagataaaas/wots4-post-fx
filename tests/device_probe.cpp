@@ -57,6 +57,7 @@ struct FakeDevice {
     UINT offset = 12, stride = 24;
     unsigned draws = 0, creates = 0, clears = 0, forbiddenMasks = 0, unexpected = 0;
     unsigned failDraw = 0;
+    D3DFORMAT failFormat = D3DFMT_UNKNOWN;
     bool failCapture = false, lost = false, failCreate = false, alias = false;
     bool blending = true, zWriting = true;
     DWORD requestedMask = 0xf;
@@ -143,6 +144,7 @@ HRESULT STDMETHODCALLTYPE createShader(FakeDevice* device, const DWORD* code, ID
 HRESULT STDMETHODCALLTYPE createTexture(FakeDevice* device, UINT width, UINT height, UINT, DWORD, D3DFORMAT format,
     D3DPOOL pool, IDirect3DTexture9** output, HANDLE*) {
     ++device->creates;
+    if (format == device->failFormat) return E_OUTOFMEMORY;
     auto* texture = createObject(device);
     texture->surface = createObject(device);
     texture->description.Width = width; texture->description.Height = height;
@@ -287,11 +289,13 @@ int main(int argc, char** argv) {
     test::check("Drawing resumes after Reset", !effects.failed() && sameState(fake, original));
     fake.failCapture = true;
     const unsigned beforeCaptureFailure = fake.draws;
-    test::check("Capture failure skips all drawing", FAILED(effects.render(device, input, depthInput, camera(), 3.033, settings)) && fake.draws == beforeCaptureFailure);
+    test::check("Capture failure skips all drawing and is reported as such",
+        effects.render(device, input, depthInput, camera(), 3.033, settings) == post_fx::stateCaptureFailed && fake.draws == beforeCaptureFailure);
     fake.failCapture = false;
     effects.releaseResources();
     fake.lost = true;
-    test::check("Lost device performs no drawing", effects.render(device, input, depthInput, camera(), 4, settings) == D3DERR_DEVICELOST && fake.draws == beforeCaptureFailure);
+    test::check("Lost device performs no drawing and is not reported as a failure",
+        effects.render(device, input, depthInput, camera(), 4, settings) == S_FALSE && fake.draws == beforeCaptureFailure);
     fake.lost = false;
     fake.failCreate = true;
     test::check("Shader creation failure is reported", FAILED(effects.render(device, input, depthInput, camera(), 4.033, settings)));
@@ -328,6 +332,22 @@ int main(int argc, char** argv) {
     const unsigned beforeResolveFailure = fake.draws;
     test::check("SSAA downsample failure skips game-color write and restores device state",
         FAILED(effects.render(device, input, nullptr, {}, 6.066, settings, 2)) && fake.draws == beforeResolveFailure + 1 && sameState(fake, original));
+    effects.releaseResources();
+    fake.failDraw = 0;
+    settings.change(post_fx::antialiasing, post_fx::aaSmaa);
+    fake.failFormat = D3DFMT_L8;
+    const unsigned beforeSmaaFailure = fake.draws;
+    test::check("A failed SMAA setup is reported", FAILED(effects.render(device, input, nullptr, {}, 8, settings, 2)));
+    test::check("A failed SMAA setup leaves the SSAA resolve running", fake.draws == beforeSmaaFailure + 2 && sameState(fake, original));
+    const unsigned afterSmaaFailure = fake.creates;
+    test::check("SMAA is not retried each frame while other passes continue",
+        effects.render(device, input, nullptr, {}, 8.033, settings, 2) == S_OK && fake.creates == afterSmaaFailure &&
+        fake.draws == beforeSmaaFailure + 4);
+    fake.failFormat = D3DFMT_UNKNOWN;
+    effects.releaseResources();
+    const unsigned beforeSmaaRetry = fake.draws;
+    test::check("SMAA is retried after Reset", effects.render(device, input, nullptr, {}, 9, settings, 2) == S_OK &&
+        fake.draws == beforeSmaaRetry + 5);
     effects.releaseResources();
     test::check("SMAA/SSAA resources and lookup COM references are all released", [&]() {
         for (const auto* object : fake.created) if (object->references != 0) return false;

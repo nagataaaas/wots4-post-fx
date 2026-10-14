@@ -40,6 +40,8 @@ inline constexpr unsigned shaderConstantCount = shader_register::cameraForward +
 
 // Saves only states changed by our passes. References are released within this draw,
 // so a persistent state block cannot keep the game's old textures alive across Reset.
+// The game requests a pure device, so capturing relies on the D3D9 runtime still
+// answering these Get calls; a failed capture suspends the passes instead of drawing.
 class DeviceState {
 public:
     explicit DeviceState(IDirect3DDevice9* device) : device(device) {}
