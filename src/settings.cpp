@@ -7,7 +7,8 @@
 namespace post_fx {
 namespace {
 const wots4::LocalizedText aaChoices[] = {{L"無効", L"Off"}, {L"FXAA", L"FXAA"}, {L"SMAA", L"SMAA"}};
-const wots4::LocalizedText ssaaChoices[] = {{L"無効", L"Off"}, {L"縦横2倍（4サンプル）", L"2x per axis (4 samples)"}};
+const wots4::LocalizedText ssaaChoices[] = {{L"無効", L"Off"}, {L"縦横1.5倍（2.25サンプル）", L"1.5x per axis (2.25 samples)"},
+    {L"縦横2倍（4サンプル）", L"2x per axis (4 samples)"}};
 const wots4::LocalizedText toggleChoices[] = {{L"有効", L"On"}, {L"無効", L"Off"}};
 const wots4::LocalizedText strengths[] = {{L"弱", L"Low"}, {L"標準", L"Normal"}, {L"強", L"High"}};
 const wots4::LocalizedText qualities[] = {{L"低", L"Low"}, {L"標準", L"Normal"}, {L"高", L"High"}};
@@ -18,14 +19,14 @@ const wots4::OptionItem items[] = {
     {wots4::optionToggle, {L"モーションブラー", L"Motion Blur"}, toggleChoices, 2, 0},
     {wots4::optionChoice, {L"ブラーの強さ", L"Blur Strength"}, strengths, 3, 1},
     {wots4::optionChoice, {L"ブラーの品質", L"Blur Quality"}, qualities, 3, 1},
-    {wots4::optionChoice, {L"SSAA", L"SSAA"}, ssaaChoices, 2, 0},
+    {wots4::optionChoice, {L"SSAA", L"SSAA"}, ssaaChoices, 3, 0},
 };
 // config.ini spells each choice by name; the array index is the option value.
 // enabled keeps 0/1 like every Mod's on/off key (a toggle's value 1 is "on").
 const wchar_t* const methodNames[] = {L"off", L"fxaa", L"smaa"};
 const wchar_t* const enabledNames[] = {L"0", L"1"};
 const wchar_t* const levelNames[] = {L"low", L"normal", L"high"};
-const wchar_t* const supersamplingNames[] = {L"off", L"2x"};
+const wchar_t* const supersamplingNames[] = {L"off", L"1.5x", L"2x"};
 const wchar_t* const sharpeningNames[] = {L"off", L"low", L"normal", L"high"};
 struct ConfigKey { const wchar_t* section; const wchar_t* key; const wchar_t* const* names; };
 const ConfigKey configKeys[] = {
@@ -37,6 +38,8 @@ const ConfigKey configKeys[] = {
     {L"antialiasing", L"supersampling", supersamplingNames},
 };
 static_assert(std::size(configKeys) == optionCount && std::size(items) == optionCount);
+// registerPage lists the SSAA choices other than the startup one for the restart notice.
+static_assert(std::size(ssaaChoices) == 3 && std::size(supersamplingNames) == 3);
 // Shown under SSAA while it differs from the value the game started with, which is the one in use.
 const wots4::LocalizedText restartNotice{
     L"SSAAの変更はゲームを再起動した後に有効になります", L"Changes to SSAA will take effect after restarting the game"};
@@ -117,8 +120,10 @@ bool Settings::registerPage(const wots4::ModContext& context) {
     const wots4::OptionsPageCallbacks callbacks{this, readPage, changePage};
     wots4::OptionItem page[pageItemCount];
     std::copy(std::begin(items), std::end(items), page);
-    const uint32_t otherSupersampling = startupSupersampling ? 0 : 1;
-    page[optionCount] = wots4::optionNoticeItem(restartNotice, supersampling, {otherSupersampling});
+    // The two SSAA choices other than the one the game started with.
+    const uint32_t firstOther = startupSupersampling == 0 ? 1 : 0;
+    const uint32_t secondOther = startupSupersampling == 2 ? 1 : 2;
+    page[optionCount] = wots4::optionNoticeItem(restartNotice, supersampling, {firstOther, secondOther});
     if (context.host->addOptionsPage(context.module, &title, page, pageItemCount, &callbacks)) return true;
     if (log) log("[WARN] The ModLoader did not accept the options page with the SSAA restart notice; "
         "adding it without the notice (a ModLoader without notices refuses them).");

@@ -36,8 +36,9 @@ inline constexpr UINT cameraOrigin = 10;
 inline constexpr UINT nearBlur = 11;
 inline constexpr UINT cameraForward = 12;
 inline constexpr UINT sharpening = 13;
+inline constexpr UINT resolveScale = 14;
 }
-inline constexpr unsigned shaderConstantCount = shader_register::sharpening + 1;
+inline constexpr unsigned shaderConstantCount = shader_register::resolveScale + 1;
 
 // Saves only states changed by our passes. References are released within this draw,
 // so a persistent state block cannot keep the game's old textures alive across Reset.

@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "supersampling.h"
 #include "test_support.h"
 #include <filesystem>
 #include <fstream>
@@ -34,18 +35,19 @@ void checkRegisteredPage() {
     test::check("One page with six options and the SSAA notice", addedItems.size() == post_fx::optionCount + 1);
     if (addedItems.size() != post_fx::optionCount + 1) return;
     const auto& items = addedItems;
-    test::check("AA choices include SMAA and SSAA has 2 choices",
+    test::check("AA choices include SMAA and SSAA has Off, 1.5x and 2x",
         items[post_fx::antialiasing].choiceCount == 3 && !wcscmp(items[post_fx::antialiasing].choices[2].english, L"SMAA") &&
-        items[post_fx::supersampling].choiceCount == 2 && !wcscmp(items[post_fx::supersampling].label.english, L"SSAA"));
+        items[post_fx::supersampling].choiceCount == 3 && !wcscmp(items[post_fx::supersampling].label.english, L"SSAA") &&
+        !wcscmp(items[post_fx::supersampling].choices[1].english, L"1.5x per axis (2.25 samples)"));
     test::check("Sharpening follows anti-aliasing with Off and three strengths",
         items[post_fx::sharpening].choiceCount == 4 && !wcscmp(items[post_fx::sharpening].label.japanese, L"シャープ化") &&
         !wcscmp(items[post_fx::sharpening].choices[3].english, L"High") && items[post_fx::sharpening].defaultValue == 0);
     test::check("Motion blur uses the toggle ABI", items[post_fx::motionBlur].kind == wots4::optionToggle &&
         !wcscmp(items[post_fx::motionBlur].choices[0].english, L"On") && !wcscmp(items[post_fx::motionBlur].choices[1].english, L"Off"));
-    // Started with SSAA off, so the notice shows while SSAA is on (bit 1).
+    // Started with SSAA off, so the notice shows while SSAA is 1.5x or 2x (bits 1 and 2).
     test::check("The notice under SSAA shows while SSAA differs from the startup value",
         items[post_fx::optionCount].kind == wots4::optionNotice && items[post_fx::optionCount].defaultValue == post_fx::supersampling &&
-        items[post_fx::optionCount].choiceCount == 0b10 && !wcscmp(items[post_fx::optionCount].label.japanese, L"SSAAの変更はゲームを再起動した後に有効になります"));
+        items[post_fx::optionCount].choiceCount == 0b110 && !wcscmp(items[post_fx::optionCount].label.japanese, L"SSAAの変更はゲームを再起動した後に有効になります"));
 }
 }
 int main(int argc, char** argv) {
@@ -90,7 +92,7 @@ int main(int argc, char** argv) {
     warnings = warningsBeforeRefusal;
     test::check("Settings page registers again", settings.registerPage(context));
     test::check("Out-of-range item and choice are rejected", !settings.change(post_fx::optionCount, 0) &&
-        !settings.change(post_fx::antialiasing, 3) && !settings.change(post_fx::sharpening, 4) && !settings.change(post_fx::supersampling, 2));
+        !settings.change(post_fx::antialiasing, 3) && !settings.change(post_fx::sharpening, 4) && !settings.change(post_fx::supersampling, 3));
     callbacks.changed(callbacks.context, post_fx::motionBlur, 1);
     callbacks.changed(callbacks.context, post_fx::antialiasing, 1);
     test::check("Toggle value 1 and FXAA index 1 enable independently",
@@ -120,11 +122,21 @@ int main(int argc, char** argv) {
     }
     test::check("Invalid values produce readable warnings", warnings == 5);
     settings.change(post_fx::antialiasing, post_fx::aaSmaa);
-    settings.change(post_fx::supersampling, 1);
+    settings.change(post_fx::supersampling, post_fx::supersamplingDouble);
     settings.save();
     restored.initialize(prefix.c_str(), log);
     test::check("SMAA and SSAA roundtrip independently", restored.value(post_fx::antialiasing) == post_fx::aaSmaa &&
-        restored.value(post_fx::supersampling) == 1 && readValue(config, L"antialiasing", L"supersampling") == L"2x");
+        restored.value(post_fx::supersampling) == post_fx::supersamplingDouble &&
+        readValue(config, L"antialiasing", L"supersampling") == L"2x");
+    settings.change(post_fx::supersampling, post_fx::supersamplingOneAndHalf);
+    settings.save();
+    restored.initialize(prefix.c_str(), log);
+    test::check("SSAA 1.5x roundtrips by name", restored.value(post_fx::supersampling) == post_fx::supersamplingOneAndHalf &&
+        readValue(config, L"antialiasing", L"supersampling") == L"1.5x");
+    test::check("Started with 1.5x, the notice shows while SSAA is off or 2x", [&]() {
+        if (!restored.registerPage(context)) return false;
+        return addedItems.size() == post_fx::optionCount + 1 && addedItems[post_fx::optionCount].choiceCount == 0b101;
+    }());
     settings.change(post_fx::sharpening, post_fx::sharpeningHigh);
     settings.save();
     restored.initialize(prefix.c_str(), log);

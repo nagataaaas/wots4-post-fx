@@ -17,6 +17,7 @@ private:
     static void __fastcall createScene(void* scene, void*, UINT width, UINT height);
     void captureCamera(void* renderer, void* camera);
     void process(void* scene);
+    void presentResolvedScene(void* scene);
     bool codeMatches() const;
     bool installHooks();
     uintptr_t address(uintptr_t preferred) const { return base + preferred - preferredImageBase; }
@@ -35,12 +36,14 @@ private:
     using CopyFunction = bool (__cdecl*)(void*, void*);
     using RecreateFunction = bool (__thiscall*)(void*);
     using CreateSceneFunction = void (__thiscall*)(void*, UINT, UINT);
+    using BeginGroupFunction = bool (__thiscall*)(void*, void*, unsigned);
+    using EndGroupFunction = bool (__thiscall*)(void*);
     FrameFunction originalFrame = nullptr;
     CameraFunction originalCamera = nullptr;
     CopyFunction originalCopy = nullptr;
     RecreateFunction originalRecreate = nullptr;
     CreateSceneFunction originalCreateScene = nullptr;
-    unsigned startupSamplingFactor = 1;
+    SupersamplingMode startupSupersampling = supersamplingOff;
     void* enlargedScene = nullptr;
     SceneSize sceneSize{};
     void* mainFrame = nullptr;

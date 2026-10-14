@@ -18,7 +18,7 @@ find_program(POST_FX_COMPILER fxc
     REQUIRED)
 set(shader_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${shader_directory}")
-foreach(shader IN ITEMS copy fxaa motion_blur smaa_edges smaa_weights smaa_blend sharpen)
+foreach(shader IN ITEMS copy fxaa motion_blur smaa_edges smaa_weights smaa_blend sharpen resolve_area)
     add_custom_command(OUTPUT "${shader_directory}/${shader}.cso"
         COMMAND "${POST_FX_COMPILER}" /nologo /T ps_3_0 /E main /O3
             /Fo "${shader_directory}/${shader}.cso" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}.hlsl"
@@ -59,7 +59,7 @@ if(WOTS4_BUILD_TESTS)
         LINK_OPTIONS /BASE:0x10000000 /DYNAMICBASE
         ARGS "${WOTS4_UNPACKED_EXE}" $<TARGET_FILE:mod_post_fx> NEEDS_EXE)
     add_dependencies(post_fx_native_probe mod_post_fx)
-    foreach(scenario IN ITEMS unsupported conflict registration steam ssaa layout scene_conflict)
+    foreach(scenario IN ITEMS unsupported conflict registration steam ssaa ssaa15 layout scene_conflict)
         add_test(NAME post_fx_native_${scenario} COMMAND post_fx_native_probe
             "${WOTS4_UNPACKED_EXE}" $<TARGET_FILE:mod_post_fx> ${scenario})
         set_tests_properties(post_fx_native_${scenario} PROPERTIES LABELS needs_exe)

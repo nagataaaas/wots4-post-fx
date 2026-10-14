@@ -61,19 +61,34 @@ int main() {
     camera = sample();
     history.clear();
     test::check("Reset starts a fresh history", !history.advance(camera, 3, 0, 1).valid);
-    auto size = post_fx::supersampledSize(1920, 1080, 2, 8192, 8192);
-    test::check("SSAA doubles both scene axes", size.width == 3840 && size.height == 2160 && size.factor == 2);
-    size = post_fx::supersampledSize(3840, 2160, 2, 8192, 8192);
-    test::check("SSAA permits a 4K display when device limits allow", size.width == 7680 && size.height == 4320 && size.factor == 2);
-    size = post_fx::supersampledSize(3840, 2160, 2, 4096, 4096);
-    test::check("SSAA exceeding device dimensions falls back", size.width == 3840 && size.factor == 1);
-    size = post_fx::supersampledSize(5000, 4000, 2, 16384, 16384);
-    test::check("SSAA exceeding the scene pixel budget falls back", size.width == 5000 && size.factor == 1);
-    size = post_fx::supersampledSize(UINT32_MAX, UINT32_MAX, 2, UINT32_MAX, UINT32_MAX);
-    test::check("SSAA dimensions cannot overflow", size.width == UINT32_MAX && size.factor == 1);
-    size = post_fx::supersampledSize(0, 1080, 2, 8192, 8192);
-    test::check("SSAA rejects empty targets", size.width == 0 && size.factor == 1);
-    size = post_fx::supersampledSize(1920, 1080, 3, 8192, 8192);
-    test::check("Unsupported sample factors preserve native resolution", size.width == 1920 && size.factor == 1);
+    using post_fx::supersamplingOff;
+    using post_fx::supersamplingOneAndHalf;
+    using post_fx::supersamplingDouble;
+    auto size = post_fx::supersampledSize(1920, 1080, supersamplingDouble, 8192, 8192);
+    test::check("SSAA 2x doubles both scene axes and keeps the native size", size.width == 3840 && size.height == 2160 &&
+        size.nativeWidth == 1920 && size.nativeHeight == 1080 && size.mode == supersamplingDouble);
+    size = post_fx::supersampledSize(3840, 2160, supersamplingDouble, 8192, 8192);
+    test::check("SSAA permits a 4K display when device limits allow", size.width == 7680 && size.height == 4320 && size.mode == supersamplingDouble);
+    size = post_fx::supersampledSize(3840, 2160, supersamplingDouble, 4096, 4096);
+    test::check("SSAA exceeding device dimensions falls back", size.width == 3840 && size.mode == supersamplingOff);
+    size = post_fx::supersampledSize(5000, 4000, supersamplingDouble, 16384, 16384);
+    test::check("SSAA exceeding the scene pixel budget falls back", size.width == 5000 && size.mode == supersamplingOff);
+    size = post_fx::supersampledSize(UINT32_MAX, UINT32_MAX, supersamplingDouble, UINT32_MAX, UINT32_MAX);
+    test::check("SSAA dimensions cannot overflow", size.width == UINT32_MAX && size.mode == supersamplingOff);
+    size = post_fx::supersampledSize(0, 1080, supersamplingDouble, 8192, 8192);
+    test::check("SSAA rejects empty targets", size.width == 0 && size.mode == supersamplingOff);
+    size = post_fx::supersampledSize(1920, 1080, static_cast<post_fx::SupersamplingMode>(3), 8192, 8192);
+    test::check("Unsupported modes preserve native resolution", size.width == 1920 && size.mode == supersamplingOff);
+    size = post_fx::supersampledSize(1920, 1080, supersamplingOneAndHalf, 8192, 8192);
+    test::check("SSAA 1.5x enlarges both axes by half", size.width == 2880 && size.height == 1620 &&
+        size.nativeWidth == 1920 && size.nativeHeight == 1080 && size.mode == supersamplingOneAndHalf);
+    size = post_fx::supersampledSize(1365, 767, supersamplingOneAndHalf, 8192, 8192);
+    test::check("SSAA 1.5x rounds odd lengths up", size.width == 2048 && size.height == 1151);
+    size = post_fx::supersampledSize(3840, 2160, supersamplingOneAndHalf, 4096, 4096);
+    test::check("SSAA 1.5x of 4K exceeding device dimensions falls back", size.width == 3840 && size.mode == supersamplingOff);
+    size = post_fx::supersampledSize(3840, 2160, supersamplingOneAndHalf, 8192, 8192);
+    test::check("SSAA 1.5x of 4K fits the scene pixel budget", size.width == 5760 && size.height == 3240);
+    test::check("Display-pixel widths scale with the mode", post_fx::sceneScale(supersamplingOff) == 1 &&
+        post_fx::sceneScale(supersamplingOneAndHalf) == 1.5f && post_fx::sceneScale(supersamplingDouble) == 2);
     return test::finish();
 }

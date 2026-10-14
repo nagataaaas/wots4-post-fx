@@ -21,6 +21,9 @@ ULONG STDMETHODCALLTYPE releaseReference(Object* object) {
 HRESULT STDMETHODCALLTYPE levelDescription(Object* object, UINT, D3DSURFACE_DESC* description) {
     *description = object->description; return S_OK;
 }
+HRESULT STDMETHODCALLTYPE surfaceDescription(Object* object, D3DSURFACE_DESC* description) {
+    *description = object->description; return S_OK;
+}
 HRESULT STDMETHODCALLTYPE getSurface(Object* object, UINT, IDirect3DSurface9** surface) {
     *surface = reinterpret_cast<IDirect3DSurface9*>(object->surface);
     addReference(object->surface); return S_OK;
@@ -62,8 +65,8 @@ struct FakeDevice {
     bool blending = true, zWriting = true;
     DWORD requestedMask = 0xf;
     std::vector<Object*> created;
-    // What each draw read: its pixel shader, the texture on sampler 1 and that sampler's filter.
-    struct DrawRecord { Object* shader; Object* secondTexture; DWORD secondFilter; };
+    // What each draw wrote and read: its target, pixel shader, the texture on sampler 1 and that sampler's filter.
+    struct DrawRecord { Object* target; Object* shader; Object* secondTexture; DWORD secondFilter; };
     std::vector<DrawRecord> drawRecords;
 };
 HRESULT STDMETHODCALLTYPE unexpected(FakeDevice* device) { ++device->unexpected; return E_NOTIMPL; }
@@ -178,7 +181,8 @@ HRESULT STDMETHODCALLTYPE createTexture(FakeDevice* device, UINT width, UINT hei
 }
 HRESULT STDMETHODCALLTYPE draw(FakeDevice* device, D3DPRIMITIVETYPE, UINT, const void* vertices, UINT stride) {
     ++device->draws;
-    device->drawRecords.push_back({device->pixelShader, device->textures[1], device->samplerStates[1][D3DSAMP_MINFILTER]});
+    device->drawRecords.push_back({device->targets[0], device->pixelShader, device->textures[1],
+        device->samplerStates[1][D3DSAMP_MINFILTER]});
     if (device->renderStates[D3DRS_SRGBWRITEENABLE] && device->samplerStates[0][D3DSAMP_SRGBTEXTURE]) ++device->srgbDraws;
     for (const auto* texture : device->textures)
         if (texture && texture->surface == device->targets[0]) device->alias = true;
@@ -195,6 +199,7 @@ void* deviceTable[119]{};
 void initializeTables() {
     objectTable[1] = reinterpret_cast<void*>(addReference);
     objectTable[2] = reinterpret_cast<void*>(releaseReference);
+    objectTable[12] = reinterpret_cast<void*>(surfaceDescription);
     objectTable[17] = reinterpret_cast<void*>(levelDescription);
     objectTable[18] = reinterpret_cast<void*>(getSurface);
     objectTable[19] = reinterpret_cast<void*>(lockTexture);
@@ -397,18 +402,61 @@ int main(int argc, char** argv) {
     effects.releaseResources();
     fake.failDraw = 0;
     settings.change(post_fx::antialiasing, post_fx::aaOff);
+    // The color texture is 640x240 here: a 2x scene for a 320x120 display.
+    const post_fx::SceneSize doubledScene = post_fx::supersampledSize(320, 120, post_fx::supersamplingDouble, 8192, 8192);
     const unsigned beforeResolve = fake.draws;
-    test::check("SSAA resolves and replicates even with other effects off", SUCCEEDED(effects.render(device, input, nullptr, {}, 6, settings, 2)) &&
+    test::check("SSAA resolves and replicates even with other effects off", SUCCEEDED(effects.render(device, input, nullptr, {}, 6, settings, doubledScene)) &&
         fake.draws == beforeResolve + 2 && sameState(fake, original));
     const unsigned beforeResolveReuse = fake.creates;
-    effects.render(device, input, nullptr, {}, 6.033, settings, 2);
+    effects.render(device, input, nullptr, {}, 6.033, settings, doubledScene);
     test::check("SSAA steady-state resolve reuses resources", fake.creates == beforeResolveReuse);
     fake.failDraw = fake.draws + 1;
     const unsigned beforeResolveFailure = fake.draws;
     test::check("SSAA downsample failure skips game-color write and restores device state",
-        FAILED(effects.render(device, input, nullptr, {}, 6.066, settings, 2)) && fake.draws == beforeResolveFailure + 1 && sameState(fake, original));
+        FAILED(effects.render(device, input, nullptr, {}, 6.066, settings, doubledScene)) && fake.draws == beforeResolveFailure + 1 && sameState(fake, original));
     effects.releaseResources();
     fake.failDraw = 0;
+    // 960x240 is a 1.5x scene for a 640x160 display. objects[0], the bound render target, stands for the display group.
+    color.description.Width = depth.description.Width = 960;
+    objects[0].description.Width = 640;
+    objects[0].description.Height = 160;
+    const post_fx::SceneSize oneAndHalfScene = post_fx::supersampledSize(640, 160, post_fx::supersamplingOneAndHalf, 8192, 8192);
+    const size_t firstCreated = fake.created.size();
+    const unsigned beforeAreaResolve = fake.draws;
+    test::check("SSAA 1.5x resolves by area and leaves the game's scene texture to the game",
+        SUCCEEDED(effects.render(device, input, nullptr, {}, 6.1, settings, oneAndHalfScene)) &&
+        fake.draws == beforeAreaResolve + 1 && effects.resolvedWaiting() && sameState(fake, original));
+    // prepare() created the shaders first, in ShaderIndex order; the area resolve is the eighth.
+    Object* const nativeCopyShader = fake.created[firstCreated];
+    Object* const areaResolveShader = fake.created[firstCreated + 7];
+    test::check("The 1.5x resolve uses the area shader, not the game's color target",
+        fake.drawRecords.back().shader == areaResolveShader && fake.drawRecords.back().target != color.surface);
+    const unsigned beforePresent = fake.draws;
+    test::check("The waiting 1.5x image is copied once into the bound native render target",
+        effects.presentResolved(device) == S_OK && fake.draws == beforePresent + 1 &&
+        fake.drawRecords.back().target == &objects[0] && fake.drawRecords.back().shader == nativeCopyShader &&
+        !effects.resolvedWaiting() && sameState(fake, original));
+    test::check("Nothing is drawn again until the next resolve",
+        effects.presentResolved(device) == S_FALSE && fake.draws == beforePresent + 1);
+    effects.render(device, input, nullptr, {}, 6.133, settings, oneAndHalfScene);
+    objects[0].description.Width = 320;
+    const unsigned beforeWrongTarget = fake.draws;
+    test::check("A render target of another size is left alone and the image is dropped",
+        effects.presentResolved(device) == S_FALSE && fake.draws == beforeWrongTarget && !effects.resolvedWaiting() &&
+        sameState(fake, original));
+    effects.render(device, input, nullptr, {}, 6.166, settings, oneAndHalfScene);
+    effects.discardResolved();
+    test::check("A discarded image is not drawn", effects.presentResolved(device) == S_FALSE && fake.draws == beforeWrongTarget + 1);
+    fake.failDraw = fake.draws + 1;
+    test::check("A failed 1.5x resolve leaves nothing waiting",
+        FAILED(effects.render(device, input, nullptr, {}, 6.2, settings, oneAndHalfScene)) && !effects.resolvedWaiting() &&
+        sameState(fake, original));
+    test::check("A scene size that the mode does not produce is refused",
+        effects.render(device, input, nullptr, {}, 6.233, settings, doubledScene) == E_INVALIDARG);
+    effects.releaseResources();
+    fake.failDraw = 0;
+    color.description.Width = depth.description.Width = 640;
+    objects[0].description = {};
     settings.change(post_fx::antialiasing, post_fx::aaSmaa);
     fake.srgbDraws = 0;
     effects.render(device, input, nullptr, {}, 7, settings);
@@ -422,16 +470,16 @@ int main(int argc, char** argv) {
     effects.releaseResources();
     fake.failFormat = D3DFMT_L8;
     const unsigned beforeSmaaFailure = fake.draws;
-    test::check("A failed SMAA setup is reported", FAILED(effects.render(device, input, nullptr, {}, 8, settings, 2)));
+    test::check("A failed SMAA setup is reported", FAILED(effects.render(device, input, nullptr, {}, 8, settings, doubledScene)));
     test::check("A failed SMAA setup leaves the SSAA resolve running", fake.draws == beforeSmaaFailure + 2 && sameState(fake, original));
     const unsigned afterSmaaFailure = fake.creates;
     test::check("SMAA is not retried each frame while other passes continue",
-        effects.render(device, input, nullptr, {}, 8.033, settings, 2) == S_OK && fake.creates == afterSmaaFailure &&
+        effects.render(device, input, nullptr, {}, 8.033, settings, doubledScene) == S_OK && fake.creates == afterSmaaFailure &&
         fake.draws == beforeSmaaFailure + 4);
     fake.failFormat = D3DFMT_UNKNOWN;
     effects.releaseResources();
     const unsigned beforeSmaaRetry = fake.draws;
-    test::check("SMAA is retried after Reset", effects.render(device, input, nullptr, {}, 9, settings, 2) == S_OK &&
+    test::check("SMAA is retried after Reset", effects.render(device, input, nullptr, {}, 9, settings, doubledScene) == S_OK &&
         fake.draws == beforeSmaaRetry + 5);
     effects.releaseResources();
     test::check("The Direct3D object is released after each support query", fakeDirect3D.references == 1);

@@ -11,7 +11,7 @@ Adds anti-aliasing, sharpening and camera motion blur to the 3D image. Text and 
 
 - FXAA reduces jagged edges. Fine patterns can become softer.
 - SMAA 1x detects edge patterns and uses the official implementation's Ultra preset. It also uses depth differences, so it smooths the outlines of objects whose colors are close to the background.
-- SSAA renders the 3D scene at twice the resolution on each axis, then reduces it by averaging four pixels. It can be combined with FXAA or SMAA. UI resolution stays unchanged.
+- SSAA renders the 3D scene at a higher resolution and reduces it to smooth edges. Choose 2x per axis (4 samples per pixel) or 1.5x per axis (2.25 samples). 1.5x is lighter than 2x and its effect is milder. It can be combined with FXAA or SMAA. UI resolution stays unchanged.
 - Sharpening uses AMD CAS (Contrast Adaptive Sharpening) to bring back detail softened by anti-aliasing. Areas that are already sharp are sharpened less.
 - Anti-aliasing and sharpening apply before motion blur. They do not process the edges of blur streaks.
 - Motion blur follows camera movement. It does not blur independently moving characters or swords while the camera is stationary.
@@ -32,20 +32,20 @@ The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen
 | Motion Blur | Off / On | Off |
 | Blur Strength | Low / Normal / High | Normal |
 | Blur Quality | Low / Normal / High | Normal |
-| SSAA | Off / 2x per axis (4 samples) | Off |
+| SSAA | Off / 1.5x per axis (2.25 samples) / 2x per axis (4 samples) | Off |
 
 Strength changes exposure, and quality changes the sample count (4 / 8 / 12). Higher quality increases GPU work. Actual rendering time and FPS have not been measured.
 
 Stronger sharpening increases the light/dark contrast at edges. Too much of it can show outlines around edges.
 
-SSAA quadruples the rendered pixel count and significantly increases GPU work and memory usage. If the enlarged scene exceeds device texture dimensions or the 64 Mi-pixel scene limit, the scene is drawn at native resolution. Even within these limits, the GPU may not have enough memory. Compare SMAA alone first, then try SSAA if performance permits.
+SSAA multiplies the rendered pixel count by 4 (2x) or 2.25 (1.5x) and significantly increases GPU work and memory usage. If the enlarged scene exceeds device texture dimensions or the 64 Mi-pixel scene limit, the scene is drawn at native resolution. Even within these limits, the GPU may not have enough memory. Compare SMAA alone first, then try SSAA at 1.5x, and 2x if performance still permits.
 
 Strength and quality are retained while blur is off. The values live in `mods/post_fx/config.ini`, which the game writes when it saves its options. Exit the game before editing the file directly. Values are not case-sensitive. Missing keys and invalid values use the defaults.
 
 | Section | Key | Default | Description |
 | --- | --- | --- | --- |
 | `antialiasing` | `method` | `off` | Anti-aliasing: `off` / `fxaa` / `smaa` |
-| `antialiasing` | `supersampling` | `off` | SSAA: `off` / `2x` (twice per axis, 4 samples). Applied at the next game start |
+| `antialiasing` | `supersampling` | `off` | SSAA: `off` / `1.5x` (1.5 times per axis, 2.25 samples) / `2x` (twice per axis, 4 samples). Applied at the next game start |
 | `sharpening` | `strength` | `off` | Sharpening: `off` / `low` / `normal` / `high` |
 | `motion_blur` | `enabled` | `0` | Motion blur: `1` on, `0` off |
 | `motion_blur` | `strength` | `normal` | Blur strength: `low` / `normal` / `high` |

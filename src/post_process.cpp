@@ -42,6 +42,12 @@ bool supportsLinearBlending(IDirect3DDevice9* device, D3DFORMAT format) {
     direct3d->Release();
     return SUCCEEDED(result);
 }
+// The texture must be the enlarged scene, and the native size the one that the mode enlarges to it.
+bool sceneMatches(const D3DSURFACE_DESC& description, const SceneSize& scene) {
+    if (scene.mode == supersamplingOff) return true;
+    const SceneSize expected = supersampledSize(scene.nativeWidth, scene.nativeHeight, scene.mode, UINT32_MAX, UINT32_MAX);
+    return expected.mode == scene.mode && expected.width == description.Width && expected.height == description.Height;
+}
 HRESULT loadLookup(IDirect3DDevice9* device, UINT width, UINT height, D3DFORMAT format,
     const unsigned char* bytes, UINT pitch, IDirect3DTexture9** output) {
     // Managed lookups are uploaded only when SMAA resources are prepared.
@@ -82,24 +88,29 @@ void PostProcess::releaseResources() {
     release(resolvedSurface);
     release(resolvedTexture);
     device = nullptr;
-    width = height = targetCount = 0;
+    width = height = targetCount = nativeWidth = nativeHeight = 0;
+    samplingMode = supersamplingOff;
+    resolvedPending = false;
     format = D3DFMT_UNKNOWN;
     linearBlending = false;
     suspended = false;
     smaaUnavailable = false;
     history.clear();
 }
-HRESULT PostProcess::prepare(IDirect3DDevice9* currentDevice, const D3DSURFACE_DESC& description, unsigned factor) {
-    if (factor != 1 && factor != 2) return E_INVALIDARG;
+HRESULT PostProcess::prepare(IDirect3DDevice9* currentDevice, const D3DSURFACE_DESC& description, const SceneSize& scene) {
+    if (!sceneMatches(description, scene)) return E_INVALIDARG;
     if (device == currentDevice && width == description.Width && height == description.Height &&
-        format == description.Format && samplingFactor == factor)
+        format == description.Format && samplingMode == scene.mode &&
+        (scene.mode == supersamplingOff || (nativeWidth == scene.nativeWidth && nativeHeight == scene.nativeHeight)))
         return suspended ? E_FAIL : S_OK;
     releaseResources();
     device = currentDevice;
     width = description.Width;
     height = description.Height;
     format = description.Format;
-    samplingFactor = factor;
+    samplingMode = scene.mode;
+    nativeWidth = scene.mode == supersamplingOff ? width : scene.nativeWidth;
+    nativeHeight = scene.mode == supersamplingOff ? height : scene.nativeHeight;
     // Failures remain suspended until a device/target change or Reset.
     suspended = true;
     D3DCAPS9 caps{};
@@ -108,7 +119,6 @@ HRESULT PostProcess::prepare(IDirect3DDevice9* currentDevice, const D3DSURFACE_D
     if (caps.PixelShaderVersion < D3DPS_VERSION(3, 0) || !caps.NumSimultaneousRTs ||
         caps.NumSimultaneousRTs > maximumRenderTargets || description.MultiSampleType != D3DMULTISAMPLE_NONE ||
         !description.Width || !description.Height) return D3DERR_NOTAVAILABLE;
-    if (width % factor || height % factor) return D3DERR_NOTAVAILABLE;
     targetCount = caps.NumSimultaneousRTs;
     linearBlending = supportsLinearBlending(device, format);
     for (unsigned index = 0; index < shaderCount; ++index) {
@@ -121,8 +131,8 @@ HRESULT PostProcess::prepare(IDirect3DDevice9* currentDevice, const D3DSURFACE_D
         result = scratch[index]->GetSurfaceLevel(0, &scratchSurfaces[index]);
         if (FAILED(result)) return result;
     }
-    if (factor == 2) {
-        result = device->CreateTexture(width / factor, height / factor, 1, D3DUSAGE_RENDERTARGET, format,
+    if (samplingMode != supersamplingOff) {
+        result = device->CreateTexture(nativeWidth, nativeHeight, 1, D3DUSAGE_RENDERTARGET, format,
             D3DPOOL_DEFAULT, &resolvedTexture, nullptr);
         if (FAILED(result)) return result;
         result = resolvedTexture->GetSurfaceLevel(0, &resolvedSurface);
@@ -244,14 +254,16 @@ HRESULT PostProcess::applyMotionBlur(IDirect3DTexture9* input, IDirect3DTexture9
     if (FAILED(status)) return status;
     status = device->SetPixelShaderConstantF(shader_register::previous, &exposure.previous.elements[0][0], 4);
     if (FAILED(status)) return status;
-    const float factor = static_cast<float>(samplingFactor);
-    const float parameters[] = {exposure.scale, maximumBlurPixels * factor, blurSamples[quality], relativeDepthTolerance};
+    // Widths are tuned in display pixels; the scene can be larger.
+    const float scenePixelsPerDisplayPixel = sceneScale(samplingMode);
+    const float parameters[] = {exposure.scale, maximumBlurPixels * scenePixelsPerDisplayPixel, blurSamples[quality],
+        relativeDepthTolerance};
     status = device->SetPixelShaderConstantF(shader_register::exposure, parameters, 1);
     if (FAILED(status)) return status;
     const float origin[] = {camera.position[0], camera.position[1], camera.position[2], 1};
     status = device->SetPixelShaderConstantF(shader_register::cameraOrigin, origin, 1);
     if (FAILED(status)) return status;
-    const float nearBlur[] = {nearFadeStart, nearFadeEnd, nearExposureRatio, nearMaximumPixels * factor};
+    const float nearBlur[] = {nearFadeStart, nearFadeEnd, nearExposureRatio, nearMaximumPixels * scenePixelsPerDisplayPixel};
     status = device->SetPixelShaderConstantF(shader_register::nearBlur, nearBlur, 1);
     if (FAILED(status)) return status;
     const float forward[] = {camera.view.elements[0][2], camera.view.elements[1][2], camera.view.elements[2][2], 0};
@@ -305,17 +317,63 @@ HRESULT PostProcess::resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9*
     // A 2:1 bilinear reduction averages the four independently rendered samples, in linear space.
     HRESULT status = setLinearBlending(true);
     if (FAILED(status)) return status;
-    status = draw(resolvedSurface, input, nullptr, shaders[copyShader], width / samplingFactor, height / samplingFactor);
+    status = draw(resolvedSurface, input, nullptr, shaders[copyShader], nativeWidth, nativeHeight);
     if (FAILED(status)) return status;
     status = setLinearBlending(false);
     if (FAILED(status)) return status;
-    for (auto filter : {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER}) {
-        status = device->SetSamplerState(0, filter, D3DTEXF_POINT);
-        if (FAILED(status)) return status;
-    }
+    status = sampleColorByPoint();
+    if (FAILED(status)) return status;
     // Replicate each resolved pixel into a 2x2 block. The game's existing
     // scene-copy preserves that value with either point or linear sampling.
     return draw(colorSurface, resolvedTexture, nullptr, shaders[copyShader]);
+}
+HRESULT PostProcess::resolveByArea(IDirect3DTexture9* input) {
+    // Native pixels cover 1.5 scene texels, so each one averages the texels it overlaps,
+    // weighted by the overlap, in linear space.
+    HRESULT status = sampleColorByPoint();
+    if (FAILED(status)) return status;
+    const float scale[] = {static_cast<float>(width) / nativeWidth, static_cast<float>(height) / nativeHeight, 0, 0};
+    status = device->SetPixelShaderConstantF(shader_register::resolveScale, scale, 1);
+    if (FAILED(status)) return status;
+    status = setLinearBlending(true);
+    if (FAILED(status)) return status;
+    status = draw(resolvedSurface, input, nullptr, shaders[areaResolveShader], nativeWidth, nativeHeight);
+    if (FAILED(status)) return status;
+    return setLinearBlending(false);
+}
+HRESULT PostProcess::sampleColorByPoint() {
+    for (auto filter : {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER}) {
+        const HRESULT status = device->SetSamplerState(0, filter, D3DTEXF_POINT);
+        if (FAILED(status)) return status;
+    }
+    return S_OK;
+}
+HRESULT PostProcess::presentResolved(IDirect3DDevice9* currentDevice) {
+    if (!resolvedPending) return S_FALSE;
+    resolvedPending = false;
+    if (currentDevice != device || !resolvedTexture) return S_FALSE;
+    IDirect3DSurface9* target = nullptr;
+    HRESULT result = device->GetRenderTarget(0, &target);
+    if (FAILED(result)) return result;
+    D3DSURFACE_DESC description{};
+    result = target->GetDesc(&description);
+    // The display group is native-sized; any other target is not where this image belongs.
+    if (SUCCEEDED(result) && (description.Width != nativeWidth || description.Height != nativeHeight)) result = S_FALSE;
+    if (result != S_OK) {
+        release(target);
+        return result;
+    }
+    DeviceState saved(device);
+    if (!saved.capture(targetCount)) {
+        release(target);
+        return stateCaptureFailed;
+    }
+    result = bindPassState();
+    if (SUCCEEDED(result)) result = sampleColorByPoint();
+    if (SUCCEEDED(result)) result = draw(target, resolvedTexture, nullptr, shaders[copyShader], nativeWidth, nativeHeight);
+    const bool restored = saved.restore();
+    release(target);
+    return restored ? result : E_FAIL;
 }
 HRESULT PostProcess::renderPasses(IDirect3DTexture9* color, IDirect3DTexture9* depth, IDirect3DSurface9* colorSurface,
     const Exposure& exposure, const CameraSample& camera, uint32_t method, const Settings& settings) {
@@ -351,12 +409,17 @@ HRESULT PostProcess::renderPasses(IDirect3DTexture9* color, IDirect3DTexture9* d
         advance();
     }
     // The game's texture is written only after every effect pass succeeds.
-    if (samplingFactor == 2) return resolveSamples(input, colorSurface);
+    if (samplingMode == supersamplingDouble) return resolveSamples(input, colorSurface);
+    // The game's bilinear scene copy would mix neighbors of a 1.5x image, so the resolved
+    // image waits for presentResolved() instead of going into the game's texture.
+    if (samplingMode == supersamplingOneAndHalf) return resolveByArea(input);
     return draw(colorSurface, input, nullptr, shaders[copyShader]);
 }
 HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* color, IDirect3DTexture9* depth,
-    const CameraSample& camera, double seconds, const Settings& settings, unsigned factor) {
-    if (!settings.enabled() && factor == 1) { history.clear(); return S_FALSE; }
+    const CameraSample& camera, double seconds, const Settings& settings, const SceneSize& scene) {
+    resolvedPending = false;
+    const bool supersampled = scene.mode != supersamplingOff;
+    if (!settings.enabled() && !supersampled) { history.clear(); return S_FALSE; }
     if (!currentDevice || !color) { history.clear(); return S_FALSE; }
     HRESULT result = currentDevice->TestCooperativeLevel();
     if (FAILED(result)) {
@@ -367,12 +430,12 @@ HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* 
     D3DSURFACE_DESC description{};
     result = color->GetLevelDesc(0, &description);
     if (FAILED(result)) return result;
-    result = prepare(currentDevice, description, factor);
+    result = prepare(currentDevice, description, scene);
     if (FAILED(result)) return result;
     const HRESULT smaaSetup = settings.value(antialiasing) == aaSmaa ? ensureSmaa() : S_OK;
     const uint32_t method = settings.value(antialiasing) == aaSmaa && smaaUnavailable ? aaOff : settings.value(antialiasing);
     const Exposure exposure = advanceHistory(camera, depth, seconds, settings);
-    if (!exposure.valid && method == aaOff && settings.value(sharpening) == sharpeningOff && factor == 1)
+    if (!exposure.valid && method == aaOff && settings.value(sharpening) == sharpeningOff && !supersampled)
         return FAILED(smaaSetup) ? smaaSetup : S_FALSE;
     IDirect3DSurface9* colorSurface = nullptr;
     result = color->GetSurfaceLevel(0, &colorSurface);
@@ -392,6 +455,7 @@ HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* 
         history.clear();
     }
     if (!restored) return E_FAIL;
+    resolvedPending = SUCCEEDED(result) && samplingMode == supersamplingOneAndHalf;
     return SUCCEEDED(result) && FAILED(smaaSetup) ? smaaSetup : result;
 }
 }

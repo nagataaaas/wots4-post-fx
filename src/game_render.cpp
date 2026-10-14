@@ -18,10 +18,15 @@ constexpr uintptr_t cameraEntry = 0x6e5c10;       // Sets a camera's matrices on
 constexpr uintptr_t copyEntry = 0x542d00;         // Frame step that copies the processed scene for display
 constexpr uintptr_t recreateEntry = 0x890e20;     // Releases and recreates device resources around Reset
 constexpr uintptr_t sceneCreateEntry = 0x541930;  // Sizes raw color, encoded depth and both postprocess targets together
+// Renderer calls that 0x542c80 uses to draw the scene copy into the display group.
+constexpr uintptr_t beginGroupEntry = 0x4b5da0;   // bool thiscall(renderer, group, clear flags)
+constexpr uintptr_t endGroupEntry = 0x6e6060;     // bool thiscall(renderer)
+constexpr unsigned clearNothing = 0;              // The scene copy passes 7 (color, stencil and depth)
 
 // Scene manager.
 constexpr unsigned sceneHolderOffset = 0x58, pingPongOffset = 0x60, pingPongIndexOffset = 0x68;
 constexpr unsigned mainFrameOffset = 0x74, copyStepOffset = 0x9c;
+constexpr unsigned displayGroupOffset = 0x40;  // The group the scene copy draws into, before the UI
 // Render target holders, and the texture to D3D texture chain.
 constexpr unsigned colorOffset = 0x50, depthOffset = 0x54, textureRendererOffset = 0x24, d3dTextureOffset = 0x5c;
 // Renderer and camera.
@@ -45,6 +50,12 @@ constexpr unsigned char textureStorageBytes[] = {0x89, 0x43, 0x5c};            /
 constexpr unsigned char viewBytes[] = {0x8d, 0xb0, 0xf0, 0x07, 0, 0};          // lea esi, [eax + 0x7f0]
 constexpr unsigned char projectionBytes[] = {0x8d, 0xb0, 0x30, 0x08, 0, 0};    // lea esi, [eax + 0x830]
 constexpr unsigned char stepCallbackBytes[] = {0xc7, 0x46, 0x0c};              // mov [esi + 0xc], imm32
+constexpr unsigned char beginGroupBytes[] = {0x55, 0x8b, 0xec, 0x56, 0x8b, 0xf1, 0x8b, 0x86, 0x98, 0, 0, 0};
+constexpr unsigned char endGroupBytes[] = {0x56, 0x8b, 0xf1, 0x8b, 0x86, 0x98, 0, 0, 0};
+constexpr unsigned char displayGroupBytes[] = {0x8b, 0x47, 0x40};              // mov eax, [edi + 0x40]
+// push 7; push eax; mov ecx, esi; call 0x4b5da0 / mov ecx, esi; call 0x6e6060 (relative calls)
+constexpr unsigned char copyBeginBytes[] = {0x6a, 0x07, 0x50, 0x8b, 0xce, 0xe8, 0xf9, 0x30, 0xf7, 0xff};
+constexpr unsigned char copyEndBytes[] = {0x8b, 0xce, 0xe8, 0x67, 0x33, 0x1a, 0x00};
 
 struct CodeSignature { uintptr_t address; const unsigned char* bytes; size_t length; };
 template<size_t Length> constexpr CodeSignature signature(uintptr_t address, const unsigned char (&bytes)[Length]) {
@@ -58,6 +69,8 @@ constexpr CodeSignature codeSignatures[] = {
     signature(0x8a1fbd, textureLinkBytes), signature(0x8a1f52, textureStorageBytes),
     signature(0x8b2c6e, viewBytes), signature(0x8b2c82, projectionBytes),
     signature(0x5428e0, stepCallbackBytes),
+    signature(beginGroupEntry, beginGroupBytes), signature(endGroupEntry, endGroupBytes),
+    signature(0x542d07, displayGroupBytes), signature(0x542c9d, copyBeginBytes), signature(0x542cf2, copyEndBytes),
 };
 // Pointers that must lead to the functions whose layout is checked above.
 struct PointerSignature { uintptr_t slot; uintptr_t target; };
@@ -117,7 +130,7 @@ bool GameRender::install(const wots4::ModContext& context, Settings& options, Po
     settings = &options;
     effects = &processing;
     log = logger;
-    startupSamplingFactor = options.value(supersampling) ? 2 : 1;
+    startupSupersampling = static_cast<SupersamplingMode>(options.value(supersampling));
     if (!codeMatches()) {
         log("[ERROR] Unsupported game code or renderer layout; Post FX was not installed.");
         return false;
@@ -253,21 +266,43 @@ void GameRender::captureCamera(void* renderer, void* camera) {
 
 bool __cdecl GameRender::copyScene(void* step, void* scene) {
     auto& render = *active;
+    bool processed = false;
     if (render.mainFrame && render.frameDepth == 1 && scene && step == pointer(scene, copyStepOffset) &&
         render.mainFrame == pointer(scene, mainFrameOffset)) {
         if (!render.copied) {
-            render.copied = true;
+            render.copied = processed = true;
             render.process(scene);
         } else {
             render.effects->clearHistory();
         }
     }
-    return render.originalCopy(step, scene);
+    const bool result = render.originalCopy(step, scene);
+    if (processed) render.presentResolvedScene(scene);
+    return result;
+}
+
+// Draws the 1.5x SSAA result over the game's copy, in the same display group and before the UI.
+void GameRender::presentResolvedScene(void* scene) {
+    if (!effects->resolvedWaiting()) return;
+    void* renderer = *reinterpret_cast<void**>(address(rendererGlobal));
+    void* group = pointer(scene, displayGroupOffset);
+    const auto beginGroup = reinterpret_cast<BeginGroupFunction>(address(beginGroupEntry));
+    const auto endGroup = reinterpret_cast<EndGroupFunction>(address(endGroupEntry));
+    // The renderer refuses a group outside a frame or while another one is open.
+    if (!renderer || !group || !beginGroup(renderer, group, clearNothing)) {
+        effects->discardResolved();
+        if (!errorReported) pendingError = displayGroupUnavailable;
+        return;
+    }
+    const HRESULT result = effects->presentResolved(deviceFrom(renderer));
+    endGroup(renderer);
+    if (FAILED(result) && !errorReported) pendingError = result;
 }
 
 void GameRender::process(void* scene) {
-    const unsigned factor = scene == enlargedScene ? sceneSize.factor : 1;
-    if (!settings->enabled() && factor == 1) {
+    const SceneSize size = scene == enlargedScene ? sceneSize : SceneSize{};
+    const bool supersampled = size.mode != supersamplingOff;
+    if (!settings->enabled() && !supersampled) {
         effects->clearHistory();
         return;
     }
@@ -281,8 +316,8 @@ void GameRender::process(void* scene) {
     auto* color = textureFrom(pointer(scene, pingPongOffset + index * 4), colorOffset);
     auto* depth = textureFrom(pointer(scene, sceneHolderOffset), depthOffset);
     D3DSURFACE_DESC description{};
-    if (factor == 2 && (!color || FAILED(color->GetLevelDesc(0, &description)) ||
-        description.Width != sceneSize.width || description.Height != sceneSize.height)) {
+    if (supersampled && (!color || FAILED(color->GetLevelDesc(0, &description)) ||
+        description.Width != size.width || description.Height != size.height)) {
         samplingWarningPending = !samplingWarningReported;
         effects->clearHistory();
         return;
@@ -295,20 +330,20 @@ void GameRender::process(void* scene) {
     LARGE_INTEGER now{};
     if (!QueryPerformanceCounter(&now)) current.valid = false;
     const double seconds = static_cast<double>(now.QuadPart) / clockFrequency;
-    const HRESULT result = effects->render(device, color, depth, current, seconds, *settings, factor);
+    const HRESULT result = effects->render(device, color, depth, current, seconds, *settings, size);
     if (FAILED(result) && !errorReported) pendingError = result;
 }
 
 void __fastcall GameRender::createScene(void* scene, void*, UINT width, UINT height) {
     auto& render = *active;
-    SceneSize size{width, height, 1};
-    if (render.startupSamplingFactor == 2) {
+    SceneSize size = nativeSize(width, height);
+    if (render.startupSupersampling != supersamplingOff) {
         void* renderer = *reinterpret_cast<void**>(render.address(rendererGlobal));
         auto* device = deviceFrom(renderer);
         D3DCAPS9 caps{};
         if (device && SUCCEEDED(device->GetDeviceCaps(&caps)))
-            size = supersampledSize(width, height, 2, caps.MaxTextureWidth, caps.MaxTextureHeight);
-        if (size.factor != 2) render.samplingWarningPending = !render.samplingWarningReported;
+            size = supersampledSize(width, height, render.startupSupersampling, caps.MaxTextureWidth, caps.MaxTextureHeight);
+        if (size.mode != render.startupSupersampling) render.samplingWarningPending = !render.samplingWarningReported;
     }
     render.effects->releaseResources();
     render.originalCreateScene(scene, size.width, size.height);
@@ -330,6 +365,9 @@ void GameRender::report() {
         if (pendingError == stateCaptureFailed) {
             log("[ERROR] Post FX could not read the device state it must restore; "
                 "all passes are skipped until the device is reset or the resolution changes.");
+        } else if (pendingError == displayGroupUnavailable) {
+            log("[WARN] The renderer did not open the display group for the 1.5x SSAA image; "
+                "those frames show the game's own scaled copy without the effects.");
         } else {
             char message[256];
             sprintf_s(message, "[WARN] A Post FX pass failed (HRESULT 0x%08lx); the failed pass is skipped "

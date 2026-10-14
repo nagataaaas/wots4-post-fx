@@ -1,5 +1,6 @@
 #include "post_process.h"
 #include "test_support.h"
+#include <algorithm>
 #include <vector>
 #include <cmath>
 
@@ -136,11 +137,36 @@ unsigned difference(const std::vector<DWORD>& left, const std::vector<DWORD>& ri
     return changed;
 }
 bool render(post_fx::PostProcess& effects, IDirect3DDevice9* device, Image& image, const post_fx::Settings& settings,
-    unsigned factor = 1, IDirect3DTexture9* depth = nullptr) {
+    const post_fx::SceneSize& scene = {}, IDirect3DTexture9* depth = nullptr) {
     if (FAILED(device->BeginScene())) return false;
-    const HRESULT result = effects.render(device, image.texture, depth, {}, 1, settings, factor);
+    const HRESULT result = effects.render(device, image.texture, depth, {}, 1, settings, scene);
     device->EndScene();
     return SUCCEEDED(result);
+}
+// A square 2x scene with sides of sceneLength.
+post_fx::SceneSize doubledFrom(UINT sceneLength) {
+    return post_fx::supersampledSize(sceneLength / 2, sceneLength / 2, post_fx::supersamplingDouble, 8192, 8192);
+}
+// Draws the waiting 1.5x image into target, as the game's display group would be bound.
+bool present(post_fx::PostProcess& effects, IDirect3DDevice9* device, Image& target) {
+    IDirect3DSurface9* previous = nullptr;
+    IDirect3DSurface9* surface = nullptr;
+    if (FAILED(device->GetRenderTarget(0, &previous)) || FAILED(target.texture->GetSurfaceLevel(0, &surface))) return false;
+    bool success = SUCCEEDED(device->SetRenderTarget(0, surface)) && SUCCEEDED(device->BeginScene());
+    if (success) {
+        success = effects.presentResolved(device) == S_OK;
+        device->EndScene();
+    }
+    device->SetRenderTarget(0, previous);
+    post_fx::release(surface);
+    post_fx::release(previous);
+    return success;
+}
+double linearFromSrgb(double value) {
+    return value <= 0.04045 ? value / 12.92 : std::pow((value + 0.055) / 1.055, 2.4);
+}
+double srgbFromLinear(double value) {
+    return value <= 0.0031308 ? value * 12.92 : 1.055 * std::pow(value, 1 / 2.4) - 0.055;
 }
 // distanceAt(x, y) gives the view distance of each pixel, encoded like the game's depth target.
 template<class DistanceAt>
@@ -284,7 +310,7 @@ int main(int argc, char** argv) {
     const unsigned changedWithoutDepth = output.size() == input.size() ? difference(input, output) : 0;
     test::check("Low-contrast silhouette uploads again", image.upload(fixture.device, input));
     test::check("SMAA with a depth step draws the same silhouette",
-        render(effects, fixture.device, image, settings, 1, silhouetteDepth));
+        render(effects, fixture.device, image, settings, {}, silhouetteDepth));
     test::check("That output reads back too", image.read(fixture.device, output));
     const unsigned changedWithDepth = output.size() == input.size() ? difference(input, output) : 0;
     printf("  SMAA low-contrast silhouette changed pixels: without depth=%u; with depth=%u\n",
@@ -296,7 +322,7 @@ int main(int argc, char** argv) {
             input[y * imageSize + x] = 0x7f000000 | ((x + y) % 7 ? 96u : 100u) * 0x010101;
     test::check("Faint texture uploads", image.upload(fixture.device, input));
     test::check("SMAA with flat depth draws the faint texture",
-        render(effects, fixture.device, image, settings, 1, silhouetteDepth));
+        render(effects, fixture.device, image, settings, {}, silhouetteDepth));
     test::check("Faint texture output reads back", image.read(fixture.device, output));
     test::check("A faint texture away from the depth step stays untouched", [&]() {
         for (UINT y = 4; y < imageSize - 4; ++y)
@@ -342,7 +368,7 @@ int main(int argc, char** argv) {
         for (UINT x = 0; x < imageSize; ++x)
             input[y * imageSize + x] = 0x7f000000 | (((x + y) % 2) ? 224u : 24u) * 0x010101;
     test::check("SSAA four-sample input uploads", image.upload(fixture.device, input));
-    test::check("SSAA resolves independently of post-AA and blur", render(effects, fixture.device, image, settings, 2));
+    test::check("SSAA resolves independently of post-AA and blur", render(effects, fixture.device, image, settings, doubledFrom(imageSize)));
     test::check("SSAA output reads back", image.read(fixture.device, output));
     test::check("SSAA averages four samples in linear light and replicates resolved pixels without extra smoothing", [&]() {
         // sRGB 24 and 224 average to about 165 in linear light; a gamma-space average would give 124.
@@ -358,7 +384,7 @@ int main(int argc, char** argv) {
     }());
     settings.change(post_fx::antialiasing, post_fx::aaSmaa);
     test::check("SMAA plus SSAA input uploads", image.upload(fixture.device, input));
-    test::check("SMAA and SSAA can run together", render(effects, fixture.device, image, settings, 2));
+    test::check("SMAA and SSAA can run together", render(effects, fixture.device, image, settings, doubledFrom(imageSize)));
     effects.releaseResources();
     settings.change(post_fx::antialiasing, post_fx::aaOff);
     Image nativePolygon, highPolygon(imageSize * 2);
@@ -368,7 +394,7 @@ int main(int argc, char** argv) {
     test::check("Native polygon is rasterized", drawPolygon(fixture.device, nativePolygon));
     test::check("Independent high-resolution polygon samples are rasterized", drawPolygon(fixture.device, highPolygon));
     test::check("Native polygon output reads back", nativePolygon.read(fixture.device, nativePixels));
-    test::check("High-resolution polygon resolves through SSAA", render(effects, fixture.device, highPolygon, settings, 2));
+    test::check("High-resolution polygon resolves through SSAA", render(effects, fixture.device, highPolygon, settings, doubledFrom(imageSize * 2)));
     test::check("Resolved polygon output reads back", highPolygon.read(fixture.device, highPixels));
     test::check("SSAA produces partial polygon coverage absent from native rasterization", [&]() {
         unsigned partialNative = 0, partialResolved = 0;
@@ -381,6 +407,63 @@ int main(int argc, char** argv) {
             }
         printf("  Polygon partial coverage: native=%u; SSAA=%u\n", partialNative, partialResolved);
         return partialNative == 0 && partialResolved > 20;
+    }());
+    effects.releaseResources();
+    // 1.5x: a 96x96 scene for a 64x64 display.
+    constexpr UINT enlargedSize = imageSize * 3 / 2;
+    const post_fx::SceneSize oneAndHalf =
+        post_fx::supersampledSize(imageSize, imageSize, post_fx::supersamplingOneAndHalf, 8192, 8192);
+    Image enlarged(enlargedSize), display;
+    std::vector<DWORD> enlargedInput(enlargedSize * enlargedSize), enlargedOutput, displayPixels(imageSize * imageSize);
+    test::check("Native display target is created", display.upload(fixture.device, displayPixels));
+    for (UINT y = 0; y < enlargedSize; ++y)
+        for (UINT x = 0; x < enlargedSize; ++x)
+            enlargedInput[y * enlargedSize + x] = 0x7f000000 | ((x + y) % 2 ? 224u : 24u) * 0x010101;
+    test::check("1.5x checkerboard scene uploads", enlarged.upload(fixture.device, enlargedInput));
+    test::check("SSAA 1.5x resolves the scene", render(effects, fixture.device, enlarged, settings, oneAndHalf));
+    test::check("The 1.5x scene reads back", enlarged.read(fixture.device, enlargedOutput));
+    test::check("SSAA 1.5x leaves the game's scene texture unchanged", enlargedOutput == enlargedInput);
+    test::check("The resolved 1.5x image is drawn into the display target", present(effects, fixture.device, display));
+    test::check("The display target reads back", display.read(fixture.device, displayPixels));
+    test::check("Each display pixel averages the scene texels it covers, by area and in linear light", [&]() {
+        // A 1.5-texel footprint covers one texel fully, two by half and one by a quarter. On a
+        // checkerboard the full and quarter texels share a color, so two results alternate.
+        const double dark = linearFromSrgb(24 / 255.0), bright = linearFromSrgb(224 / 255.0);
+        const double expected[] = {srgbFromLinear((1.25 * dark + bright) / 2.25) * 255,
+            srgbFromLinear((1.25 * bright + dark) / 2.25) * 255};
+        constexpr double tolerance = 2;
+        unsigned matches[2]{};
+        for (DWORD pixel : displayPixels) {
+            const double channel = pixel & 0xff;
+            if ((pixel >> 24) != 0x7f || pixel != (0x7f000000 | (pixel & 0xff) * 0x010101)) return false;
+            for (unsigned index = 0; index < 2; ++index) matches[index] += std::abs(channel - expected[index]) <= tolerance;
+        }
+        printf("  SSAA 1.5x checkerboard: expected %.1f/%.1f; matching pixels %u/%u\n",
+            expected[0], expected[1], matches[0], matches[1]);
+        return matches[0] + matches[1] == displayPixels.size() && matches[0] && matches[1];
+    }());
+    std::fill(enlargedInput.begin(), enlargedInput.end(), 0x7f606060);
+    test::check("Flat 1.5x scene uploads", enlarged.upload(fixture.device, enlargedInput));
+    test::check("Flat 1.5x scene resolves and is drawn",
+        render(effects, fixture.device, enlarged, settings, oneAndHalf) && present(effects, fixture.device, display));
+    test::check("Flat display reads back", display.read(fixture.device, displayPixels));
+    test::check("A flat 1.5x scene stays the same color", [&]() {
+        for (DWORD pixel : displayPixels)
+            if (std::abs(static_cast<int>(pixel & 0xff) - 0x60) > 1 || (pixel >> 24) != 0x7f) return false;
+        return true;
+    }());
+    test::check("1.5x polygon samples are rasterized", drawPolygon(fixture.device, enlarged));
+    test::check("1.5x polygon resolves and is drawn",
+        render(effects, fixture.device, enlarged, settings, oneAndHalf) && present(effects, fixture.device, display));
+    test::check("1.5x polygon display reads back", display.read(fixture.device, displayPixels));
+    test::check("SSAA 1.5x produces partial polygon coverage absent from native rasterization", [&]() {
+        unsigned partialResolved = 0;
+        for (DWORD pixel : displayPixels) {
+            const auto value = pixel & 0xff;
+            partialResolved += value > 24 && value < 224;
+        }
+        printf("  Polygon partial coverage at 1.5x: %u\n", partialResolved);
+        return partialResolved > 20;
     }());
     effects.releaseResources();
     settings.change(post_fx::motionBlur, 1);
