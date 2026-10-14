@@ -1,4 +1,5 @@
 #include "settings.h"
+#include <algorithm>
 #include <cstdio>
 #include <cwchar>
 #include <iterator>
@@ -15,7 +16,7 @@ const wots4::OptionItem items[] = {
     {wots4::optionToggle, {L"モーションブラー", L"Motion Blur"}, toggleChoices, 2, 0},
     {wots4::optionChoice, {L"ブラーの強さ", L"Blur Strength"}, strengths, 3, 1},
     {wots4::optionChoice, {L"ブラーの品質", L"Blur Quality"}, qualities, 3, 1},
-    {wots4::optionChoice, {L"SSAA（保存後に再起動）", L"SSAA (save and restart)"}, ssaaChoices, 2, 0},
+    {wots4::optionChoice, {L"SSAA", L"SSAA"}, ssaaChoices, 2, 0},
 };
 // config.ini spells each choice by name; the array index is the option value.
 // enabled keeps 0/1 like every Mod's on/off key (a toggle's value 1 is "on").
@@ -32,6 +33,10 @@ const ConfigKey configKeys[] = {
     {L"antialiasing", L"supersampling", supersamplingNames},
 };
 static_assert(std::size(configKeys) == optionCount && std::size(items) == optionCount);
+// Shown under SSAA while it differs from the value the game started with, which is the one in use.
+const wots4::LocalizedText restartNotice{
+    L"SSAAの変更はゲームを再起動した後に有効になります", L"Changes to SSAA will take effect after restarting the game"};
+constexpr uint32_t pageItemCount = optionCount + 1;
 // Longer than any choice name, so a truncated read is never mistaken for a valid one.
 constexpr DWORD valueBufferLength = 16;
 
@@ -75,6 +80,7 @@ void Settings::initialize(const wchar_t* directory, LogFunction logger) {
             config.names[items[item].defaultValue]);
         log(message);
     }
+    startupSupersampling = values[supersampling];
     invalidateHistory();
 }
 
@@ -89,10 +95,11 @@ bool Settings::change(uint32_t item, uint32_t number) {
     return true;
 }
 
+// The page has the restart notice after the options, unless the ModLoader refused it.
 void WINAPI Settings::readPage(void* context, uint32_t* output, uint32_t count) {
-    if (!output || count != optionCount) return;
+    if (!output || (count != optionCount && count != pageItemCount)) return;
     auto& settings = *static_cast<Settings*>(context);
-    for (uint32_t item = 0; item < count; ++item) output[item] = settings.values[item];
+    for (uint32_t item = 0; item < optionCount; ++item) output[item] = settings.values[item];
     // Opening the options interrupts exposure history even when no value changes.
     settings.invalidateHistory();
 }
@@ -104,6 +111,13 @@ void WINAPI Settings::changePage(void* context, uint32_t item, uint32_t number) 
 bool Settings::registerPage(const wots4::ModContext& context) {
     const wots4::LocalizedText title{L"映像後処理", L"Post FX"};
     const wots4::OptionsPageCallbacks callbacks{this, readPage, changePage};
+    wots4::OptionItem page[pageItemCount];
+    std::copy(std::begin(items), std::end(items), page);
+    const uint32_t otherSupersampling = startupSupersampling ? 0 : 1;
+    page[optionCount] = wots4::optionNoticeItem(restartNotice, supersampling, {otherSupersampling});
+    if (context.host->addOptionsPage(context.module, &title, page, pageItemCount, &callbacks)) return true;
+    if (log) log("[WARN] The ModLoader did not accept the options page with the SSAA restart notice; "
+        "adding it without the notice (a ModLoader without notices refuses them).");
     return context.host->addOptionsPage(context.module, &title, items, optionCount, &callbacks) != FALSE;
 }
 

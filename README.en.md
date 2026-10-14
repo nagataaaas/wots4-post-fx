@@ -20,7 +20,7 @@ This prototype has been tested outside the game. Image quality, the options tab,
 
 ## Settings
 
-The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen and in-game options. Changes other than SSAA apply to the next draw. Save the options, exit the game and restart to apply SSAA changes.
+The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen and in-game options. Changes other than SSAA apply to the next draw. Save the options, exit the game and restart to apply SSAA changes. While SSAA differs from the setting in use, a notice below it says a restart is needed.
 
 | Setting | Choices | Default |
 | --- | --- | --- |
@@ -28,7 +28,7 @@ The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen
 | Motion Blur | Off / On | Off |
 | Blur Strength | Low / Normal / High | Normal |
 | Blur Quality | Low / Normal / High | Normal |
-| SSAA (save and restart) | Off / 2x per axis (4 samples) | Off |
+| SSAA | Off / 2x per axis (4 samples) | Off |
 
 Strength changes exposure, and quality changes the sample count (4 / 8 / 12). Higher quality increases GPU work. Actual rendering time and FPS have not been measured.
 

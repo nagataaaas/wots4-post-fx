@@ -73,7 +73,8 @@ int main(int argc, char** argv) {
     const BOOL accepted = initialize(&context);
     if (scenario == "valid" || scenario == "steam" || scenario == "ssaa") {
         check("Known renderer initializes without a device", accepted == TRUE);
-        check("Five options and save/frame callbacks register", options == 5 && frameCallbacks == 1 && saveCallbacks == 1);
+        check("Five options, the SSAA notice and save/frame callbacks register",
+            options == 6 && frameCallbacks == 1 && saveCallbacks == 1);
         check("All overwritten hook ranges are reserved", claimed(0x7187a0, 6) && claimed(0x6e5c10, 7) &&
             claimed(0x542d00, 7) && claimed(0x890e20, 5) && claimed(0x541930, 8));
         uint32_t values[5]{};

@@ -23,6 +23,7 @@ private:
     static void WINAPI readPage(void*, uint32_t*, uint32_t);
     static void WINAPI changePage(void*, uint32_t, uint32_t);
     uint32_t values[optionCount] = {0, 0, 1, 1, 0};
+    uint32_t startupSupersampling = 0;  // SSAA applies from the next start, so this one is in use
     uint32_t generation = 0;
     bool dirty = false;
     std::wstring path;
