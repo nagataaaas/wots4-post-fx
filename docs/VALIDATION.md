@@ -29,7 +29,7 @@ FXAA uses a relative edge threshold of 1/16, a minimum threshold of 1/128, a sub
 
 ## In the game
 
-The options page, anti-aliasing (FXAA, SMAA), sharpening, SSAA 2x and camera motion blur have been confirmed in the game. SSAA 1.5x has not been checked in the game yet. Rendering time, FPS and GPU memory use have not been measured. Motion blur intentionally skips missing, ambiguous or unsupported camera/depth inputs, partial camera ports, and frames drawn while the game window is minimized or in the background; anti-aliasing and the SSAA resolve continue in those frames.
+The options page, anti-aliasing (FXAA, SMAA), sharpening, SSAA (1.5x and 2x) and camera motion blur have been confirmed in the game. Rendering time, FPS and GPU memory use have not been measured. Motion blur intentionally skips missing, ambiguous or unsupported camera/depth inputs, partial camera ports, and frames drawn while the game window is minimized or in the background; anti-aliasing and the SSAA resolve continue in those frames.
 
 The passes read back the device state they change so they can restore it. If the Direct3D 9 runtime refuses those reads, every pass is skipped and one error is logged.
 
