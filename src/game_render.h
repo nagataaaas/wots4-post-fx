@@ -18,7 +18,10 @@ private:
     void captureCamera(void* renderer, void* camera);
     void process(void* scene);
     bool codeMatches() const;
-    uintptr_t address(uintptr_t preferred) const { return base + preferred - 0x400000; }
+    bool installHooks();
+    uintptr_t address(uintptr_t preferred) const { return base + preferred - preferredImageBase; }
+    static constexpr uintptr_t preferredImageBase = 0x400000;
+    static constexpr unsigned hookCount = 5;
     static GameRender* active;
     uintptr_t base = 0;
     const wots4::HostApi* host = nullptr;
@@ -26,7 +29,7 @@ private:
     Settings* settings = nullptr;
     PostProcess* effects = nullptr;
     LogFunction log = nullptr;
-    void* hooks[5]{};
+    void* hooks[hookCount]{};
     using FrameFunction = void (__thiscall*)(void*);
     using CameraFunction = void (__thiscall*)(void*, void*);
     using CopyFunction = bool (__cdecl*)(void*, void*);
@@ -40,13 +43,15 @@ private:
     unsigned startupSamplingFactor = 1;
     void* enlargedScene = nullptr;
     SceneSize sceneSize{};
-    bool samplingWarningPending = false, samplingWarningReported = false;
     void* mainFrame = nullptr;
     CameraSample sample;
     unsigned frameDepth = 0;
     bool copied = false, ambiguous = false;
-    HRESULT pendingError = S_OK;
-    bool errorReported = false, cameraWarningPending = false, cameraWarningReported = false;
     double clockFrequency = 1;
+    // Diagnostics are recorded while drawing and logged once from the frame callback.
+    HRESULT pendingError = S_OK;
+    bool errorReported = false;
+    bool cameraWarningPending = false, cameraWarningReported = false;
+    bool samplingWarningPending = false, samplingWarningReported = false;
 };
 }

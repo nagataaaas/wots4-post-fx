@@ -234,7 +234,7 @@ int main(int argc, char** argv) {
     for (const auto& state : post_fx::passStates) fake.renderStates[state.state] = 1;
     fake.renderStates[D3DRS_COLORWRITEENABLE1] = 0xf;
     for (unsigned sampler = 0; sampler < post_fx::effectSamplerCount; ++sampler)
-        for (auto state : post_fx::samplerStates) fake.samplerStates[sampler][state] = sampler + 5;
+        for (const auto& setting : post_fx::passSamplerStates) fake.samplerStates[sampler][setting.state] = sampler + 5;
     for (unsigned index = 0; index < std::size(fake.constants); ++index) fake.constants[index] = index + 0.25f;
     const FakeDevice original = fake;
     auto* device = reinterpret_cast<IDirect3DDevice9*>(&fake);

@@ -33,8 +33,11 @@ bool DeviceState::capture(unsigned targetCount) {
         if (FAILED(device->GetRenderState(passStates[index].state, &renderValues[index]))) return false;
     for (unsigned sampler = 0; sampler < effectSamplerCount; ++sampler) {
         if (FAILED(device->GetTexture(sampler, &textures[sampler]))) return false;
-        for (unsigned index = 0; index < std::size(samplerStates); ++index)
-            if (FAILED(device->GetSamplerState(sampler, samplerStates[index], &samplerValues[sampler][index]))) return false;
+        for (unsigned index = 0; index < std::size(passSamplerStates); ++index) {
+            const HRESULT result = device->GetSamplerState(sampler, passSamplerStates[index].state,
+                &samplerValues[sampler][index]);
+            if (FAILED(result)) return false;
+        }
     }
     captured = true;
     return true;
@@ -44,9 +47,7 @@ bool DeviceState::restore() {
     bool succeeded = true;
     auto record = [&succeeded](HRESULT result) { if (FAILED(result)) succeeded = false; };
     // Unbind scratch samplers before restoring any target they might alias.
-    record(device->SetTexture(0, nullptr));
-    record(device->SetTexture(1, nullptr));
-    record(device->SetTexture(2, nullptr));
+    for (unsigned sampler = 0; sampler < effectSamplerCount; ++sampler) record(device->SetTexture(sampler, nullptr));
     record(device->SetDepthStencilSurface(nullptr));
     for (unsigned index = 1; index < targets; ++index) record(device->SetRenderTarget(index, nullptr));
     record(device->SetRenderTarget(0, renderTargets[0]));
@@ -66,8 +67,8 @@ bool DeviceState::restore() {
     // COLORWRITEENABLE1 is deliberately never set: its requested mask can differ
     // from the effective mask currently reported by the driver.
     for (unsigned sampler = 0; sampler < effectSamplerCount; ++sampler) {
-        for (unsigned index = 0; index < std::size(samplerStates); ++index)
-            record(device->SetSamplerState(sampler, samplerStates[index], samplerValues[sampler][index]));
+        for (unsigned index = 0; index < std::size(passSamplerStates); ++index)
+            record(device->SetSamplerState(sampler, passSamplerStates[index].state, samplerValues[sampler][index]));
         record(device->SetTexture(sampler, textures[sampler]));
     }
     captured = false;
