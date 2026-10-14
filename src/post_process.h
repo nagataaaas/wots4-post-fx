@@ -33,6 +33,7 @@ private:
         const CameraSample& camera, uint32_t quality, unsigned output);
     HRESULT applySmaa(IDirect3DTexture9* input, unsigned output);
     HRESULT resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9* colorSurface);
+    HRESULT setLinearBlending(bool enabled);
     HRESULT draw(IDirect3DSurface9* output, IDirect3DTexture9* input, IDirect3DTexture9* depth,
         IDirect3DPixelShader9* shader, UINT outputWidth = 0, UINT outputHeight = 0);
     const DWORD* shaderCode[shaderCount]{};
@@ -49,6 +50,8 @@ private:
     UINT width = 0, height = 0, targetCount = 0;
     unsigned samplingFactor = 1;
     D3DFORMAT format = D3DFMT_UNKNOWN;
+    // Blend gamma-encoded 8-bit colors in linear space when the device can decode/encode sRGB.
+    bool linearBlending = false;
     bool suspended = false;
     bool smaaUnavailable = false;
     MotionHistory history;

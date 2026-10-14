@@ -273,9 +273,16 @@ int main(int argc, char** argv) {
     test::check("SSAA four-sample input uploads", image.upload(fixture.device, input));
     test::check("SSAA resolves independently of post-AA and blur", render(effects, fixture.device, image, settings, 2));
     test::check("SSAA output reads back", image.read(fixture.device, output));
-    test::check("SSAA averages four samples and replicates resolved pixels without extra smoothing", [&]() {
+    test::check("SSAA averages four samples in linear light and replicates resolved pixels without extra smoothing", [&]() {
+        // sRGB 24 and 224 average to about 165 in linear light; a gamma-space average would give 124.
+        constexpr DWORD linearAverageLow = 164, linearAverageHigh = 166;
         if (output.size() != input.size()) return false;
-        for (DWORD pixel : output) if (pixel != 0x7f7c7c7c) return false;
+        const DWORD first = output[0];
+        const DWORD channel = first & 0xff;
+        if ((first >> 24) != 0x7f || channel < linearAverageLow || channel > linearAverageHigh) return false;
+        if (first != (0x7f000000 | channel * 0x010101)) return false;
+        for (DWORD pixel : output) if (pixel != first) return false;
+        printf("  SSAA resolved value: %lu\n", static_cast<unsigned long>(channel));
         return true;
     }());
     settings.change(post_fx::antialiasing, post_fx::aaSmaa);

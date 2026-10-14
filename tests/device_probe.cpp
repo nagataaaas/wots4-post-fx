@@ -56,14 +56,36 @@ struct FakeDevice {
     DWORD fvf = 0, frequency = 2;
     UINT offset = 12, stride = 24;
     unsigned draws = 0, creates = 0, clears = 0, forbiddenMasks = 0, unexpected = 0;
-    unsigned failDraw = 0;
+    unsigned failDraw = 0, srgbDraws = 0;
     D3DFORMAT failFormat = D3DFMT_UNKNOWN;
-    bool failCapture = false, lost = false, failCreate = false, alias = false;
+    bool failCapture = false, lost = false, failCreate = false, alias = false, srgbSupported = true;
     bool blending = true, zWriting = true;
     DWORD requestedMask = 0xf;
     std::vector<Object*> created;
 };
 HRESULT STDMETHODCALLTYPE unexpected(FakeDevice* device) { ++device->unexpected; return E_NOTIMPL; }
+struct FakeDirect3D { void** table; FakeDevice* device; ULONG references = 1; };
+void* direct3dTable[17]{};
+ULONG STDMETHODCALLTYPE addDirect3D(FakeDirect3D* direct3d) { return ++direct3d->references; }
+ULONG STDMETHODCALLTYPE releaseDirect3D(FakeDirect3D* direct3d) { return --direct3d->references; }
+HRESULT STDMETHODCALLTYPE checkFormat(FakeDirect3D* direct3d, UINT, D3DDEVTYPE, D3DFORMAT, DWORD usage, D3DRESOURCETYPE, D3DFORMAT) {
+    const bool srgbQuery = usage & (D3DUSAGE_QUERY_SRGBREAD | D3DUSAGE_QUERY_SRGBWRITE);
+    return srgbQuery && !direct3d->device->srgbSupported ? D3DERR_NOTAVAILABLE : S_OK;
+}
+FakeDirect3D fakeDirect3D{direct3dTable};
+HRESULT STDMETHODCALLTYPE getDirect3D(FakeDevice*, IDirect3D9** output) {
+    addDirect3D(&fakeDirect3D);
+    *output = reinterpret_cast<IDirect3D9*>(&fakeDirect3D);
+    return S_OK;
+}
+HRESULT STDMETHODCALLTYPE displayMode(FakeDevice*, UINT, D3DDISPLAYMODE* mode) {
+    *mode = {1920, 1080, 60, D3DFMT_X8R8G8B8};
+    return S_OK;
+}
+HRESULT STDMETHODCALLTYPE creationParameters(FakeDevice*, D3DDEVICE_CREATION_PARAMETERS* parameters) {
+    *parameters = {D3DADAPTER_DEFAULT, D3DDEVTYPE_HAL, nullptr, D3DCREATE_PUREDEVICE | D3DCREATE_HARDWARE_VERTEXPROCESSING};
+    return S_OK;
+}
 HRESULT STDMETHODCALLTYPE cooperative(FakeDevice* device) { return device->lost ? D3DERR_DEVICELOST : S_OK; }
 HRESULT STDMETHODCALLTYPE caps(FakeDevice*, D3DCAPS9* output) {
     memset(output, 0, sizeof(*output)); output->NumSimultaneousRTs = 4; output->PixelShaderVersion = D3DPS_VERSION(3, 0); return S_OK;
@@ -153,6 +175,7 @@ HRESULT STDMETHODCALLTYPE createTexture(FakeDevice* device, UINT width, UINT hei
 }
 HRESULT STDMETHODCALLTYPE draw(FakeDevice* device, D3DPRIMITIVETYPE, UINT, const void* vertices, UINT stride) {
     ++device->draws;
+    if (device->renderStates[D3DRS_SRGBWRITEENABLE] && device->samplerStates[0][D3DSAMP_SRGBTEXTURE]) ++device->srgbDraws;
     for (const auto* texture : device->textures)
         if (texture && texture->surface == device->targets[0]) device->alias = true;
     const float* vertex = static_cast<const float*>(vertices);
@@ -172,8 +195,16 @@ void initializeTables() {
     objectTable[18] = reinterpret_cast<void*>(getSurface);
     objectTable[19] = reinterpret_cast<void*>(lockTexture);
     objectTable[20] = reinterpret_cast<void*>(unlockTexture);
+    for (auto& entry : direct3dTable) entry = reinterpret_cast<void*>(unexpected);
+    direct3dTable[1] = reinterpret_cast<void*>(addDirect3D);
+    direct3dTable[2] = reinterpret_cast<void*>(releaseDirect3D);
+    direct3dTable[10] = reinterpret_cast<void*>(checkFormat);
     for (auto& entry : deviceTable) entry = reinterpret_cast<void*>(unexpected);
-    deviceTable[3] = reinterpret_cast<void*>(cooperative); deviceTable[7] = reinterpret_cast<void*>(caps);
+    deviceTable[3] = reinterpret_cast<void*>(cooperative);
+    deviceTable[6] = reinterpret_cast<void*>(getDirect3D);
+    deviceTable[7] = reinterpret_cast<void*>(caps);
+    deviceTable[8] = reinterpret_cast<void*>(displayMode);
+    deviceTable[9] = reinterpret_cast<void*>(creationParameters);
     deviceTable[23] = reinterpret_cast<void*>(createTexture);
     deviceTable[37] = reinterpret_cast<void*>(setTarget); deviceTable[38] = reinterpret_cast<void*>(getTarget);
     deviceTable[39] = reinterpret_cast<void*>(setDepth); deviceTable[40] = reinterpret_cast<void*>(getDepth);
@@ -238,6 +269,7 @@ int main(int argc, char** argv) {
     for (unsigned sampler = 0; sampler < post_fx::effectSamplerCount; ++sampler)
         for (const auto& setting : post_fx::passSamplerStates) fake.samplerStates[sampler][setting.state] = sampler + 5;
     for (unsigned index = 0; index < std::size(fake.constants); ++index) fake.constants[index] = index + 0.25f;
+    fakeDirect3D.device = &fake;
     const FakeDevice original = fake;
     auto* device = reinterpret_cast<IDirect3DDevice9*>(&fake);
     auto* input = reinterpret_cast<IDirect3DTexture9*>(&color);
@@ -335,6 +367,16 @@ int main(int argc, char** argv) {
     effects.releaseResources();
     fake.failDraw = 0;
     settings.change(post_fx::antialiasing, post_fx::aaSmaa);
+    fake.srgbDraws = 0;
+    effects.render(device, input, nullptr, {}, 7, settings);
+    test::check("SMAA blends in linear light when the device supports sRGB", fake.srgbDraws == 1);
+    effects.releaseResources();
+    fake.srgbSupported = false;
+    fake.srgbDraws = 0;
+    effects.render(device, input, nullptr, {}, 7.033, settings);
+    test::check("Without sRGB support, SMAA blends without sRGB conversion", fake.srgbDraws == 0 && sameState(fake, original));
+    fake.srgbSupported = true;
+    effects.releaseResources();
     fake.failFormat = D3DFMT_L8;
     const unsigned beforeSmaaFailure = fake.draws;
     test::check("A failed SMAA setup is reported", FAILED(effects.render(device, input, nullptr, {}, 8, settings, 2)));
@@ -349,6 +391,7 @@ int main(int argc, char** argv) {
     test::check("SMAA is retried after Reset", effects.render(device, input, nullptr, {}, 9, settings, 2) == S_OK &&
         fake.draws == beforeSmaaRetry + 5);
     effects.releaseResources();
+    test::check("The Direct3D object is released after each support query", fakeDirect3D.references == 1);
     test::check("SMAA/SSAA resources and lookup COM references are all released", [&]() {
         for (const auto* object : fake.created) if (object->references != 0) return false;
         return true;

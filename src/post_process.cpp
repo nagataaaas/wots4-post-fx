@@ -27,6 +27,19 @@ bool supportedDepth(D3DFORMAT format) {
         format == D3DFMT_R16F || format == D3DFMT_G16R16F || format == D3DFMT_A16B16G16R16F ||
         format == D3DFMT_A8R8G8B8 || format == D3DFMT_X8R8G8B8;
 }
+bool supportsLinearBlending(IDirect3DDevice9* device, D3DFORMAT format) {
+    // Only 8-bit display-color targets hold gamma-encoded values; float targets are already linear.
+    if (format != D3DFMT_A8R8G8B8 && format != D3DFMT_X8R8G8B8) return false;
+    D3DDEVICE_CREATION_PARAMETERS creation{};
+    D3DDISPLAYMODE mode{};
+    if (FAILED(device->GetCreationParameters(&creation)) || FAILED(device->GetDisplayMode(0, &mode))) return false;
+    IDirect3D9* direct3d = nullptr;
+    if (FAILED(device->GetDirect3D(&direct3d))) return false;
+    const HRESULT result = direct3d->CheckDeviceFormat(creation.AdapterOrdinal, creation.DeviceType, mode.Format,
+        D3DUSAGE_RENDERTARGET | D3DUSAGE_QUERY_SRGBREAD | D3DUSAGE_QUERY_SRGBWRITE, D3DRTYPE_TEXTURE, format);
+    direct3d->Release();
+    return SUCCEEDED(result);
+}
 HRESULT loadLookup(IDirect3DDevice9* device, UINT width, UINT height, D3DFORMAT format,
     const unsigned char* bytes, UINT pitch, IDirect3DTexture9** output) {
     // Managed lookups are uploaded only when SMAA resources are prepared.
@@ -69,6 +82,7 @@ void PostProcess::releaseResources() {
     device = nullptr;
     width = height = targetCount = 0;
     format = D3DFMT_UNKNOWN;
+    linearBlending = false;
     suspended = false;
     smaaUnavailable = false;
     history.clear();
@@ -94,6 +108,7 @@ HRESULT PostProcess::prepare(IDirect3DDevice9* currentDevice, const D3DSURFACE_D
         !description.Width || !description.Height) return D3DERR_NOTAVAILABLE;
     if (width % factor || height % factor) return D3DERR_NOTAVAILABLE;
     targetCount = caps.NumSimultaneousRTs;
+    linearBlending = supportsLinearBlending(device, format);
     for (unsigned index = 0; index < shaderCount; ++index) {
         result = device->CreatePixelShader(shaderCode[index], &shaders[index]);
         if (FAILED(result)) return result;
@@ -173,6 +188,13 @@ HRESULT PostProcess::draw(IDirect3DSurface9* output, IDirect3DTexture9* input, I
     const ScreenVertex vertices[] = {{-0.5f, -0.5f, 0, 1, 0, 0}, {right, -0.5f, 0, 1, 1, 0},
         {-0.5f, bottom, 0, 1, 0, 1}, {right, bottom, 0, 1, 1, 1}};
     return device->DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(ScreenVertex));
+}
+HRESULT PostProcess::setLinearBlending(bool enabled) {
+    // Decodes sampler 0 and encodes the target. Lookup and edge inputs stay gamma-encoded.
+    const DWORD value = enabled && linearBlending;
+    const HRESULT status = device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, value);
+    if (FAILED(status)) return status;
+    return device->SetRenderState(D3DRS_SRGBWRITEENABLE, value);
 }
 HRESULT PostProcess::bindPassState() {
     for (unsigned sampler = 0; sampler < effectSamplerCount; ++sampler) {
@@ -254,22 +276,19 @@ HRESULT PostProcess::applySmaa(IDirect3DTexture9* input, unsigned output) {
     if (FAILED(status)) return status;
     status = device->SetTexture(2, nullptr);
     if (FAILED(status)) return status;
-    // Standard display-color targets need linear-space neighborhood blending;
-    // float/HDR targets already contain linear values. Lookups stay non-sRGB.
-    const DWORD displayColor = format == D3DFMT_A8R8G8B8 || format == D3DFMT_X8R8G8B8;
-    status = device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, displayColor);
-    if (FAILED(status)) return status;
-    status = device->SetRenderState(D3DRS_SRGBWRITEENABLE, displayColor);
+    status = setLinearBlending(true);
     if (FAILED(status)) return status;
     status = draw(scratchSurfaces[output], input, smaaTextures[1], shaders[neighborhoodShader]);
     if (FAILED(status)) return status;
-    status = device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
-    if (FAILED(status)) return status;
-    return device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    return setLinearBlending(false);
 }
 HRESULT PostProcess::resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9* colorSurface) {
-    // A 2:1 bilinear reduction averages the four independently rendered samples.
-    HRESULT status = draw(resolvedSurface, input, nullptr, shaders[copyShader], width / samplingFactor, height / samplingFactor);
+    // A 2:1 bilinear reduction averages the four independently rendered samples, in linear space.
+    HRESULT status = setLinearBlending(true);
+    if (FAILED(status)) return status;
+    status = draw(resolvedSurface, input, nullptr, shaders[copyShader], width / samplingFactor, height / samplingFactor);
+    if (FAILED(status)) return status;
+    status = setLinearBlending(false);
     if (FAILED(status)) return status;
     for (auto filter : {D3DSAMP_MINFILTER, D3DSAMP_MAGFILTER}) {
         status = device->SetSamplerState(0, filter, D3DTEXF_POINT);
