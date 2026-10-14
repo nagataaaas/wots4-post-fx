@@ -2,9 +2,10 @@
 
 [日本語](README.md)
 
-A Mod for the Steam version of *Way of the Samurai 4* that adds anti-aliasing, sharpening and camera motion blur.
+> [!NOTE]
+> This Mod is for the [Steam version of Way of the Samurai 4](https://store.steampowered.com/app/312780/4/?l=english) only.
 
-This prototype has been tested outside the game. Image quality, the options tab, UI exclusion across screens, device recovery and compatibility with other Mods still require in-game verification.
+Adds anti-aliasing, sharpening and camera motion blur to the 3D image. Text and the UI are not affected.
 
 ## Features
 
@@ -50,18 +51,17 @@ Strength and quality are retained while blur is off. The values live in `mods/po
 | `motion_blur` | `strength` | `normal` | Blur strength: `low` / `normal` / `high` |
 | `motion_blur` | `quality` | `normal` | Blur quality: `low` / `normal` / `high` |
 
-To keep your current settings when updating, replace only `mod.dll` and do not overwrite `mods/post_fx/config.ini`.
-
-## Installation (development version)
+## Installation
 
 > [!WARNING]
 > Install [wots4-mods (ModLoader)](https://github.com/nagataaaas/wots4-mods) first.
 
-This Mod is a prototype and is not included in Releases yet. Build it following [Building](#building) below, then install it.
-
 1. Close the game.
-2. Copy the built `build/game/mods/post_fx/` folder into the `mods` folder in the game's installation folder (the folder containing `WayOfTheSamurai4.exe`).
-3. Confirm that `{game installation folder}/mods/post_fx/mod.dll` exists, then start the game.
+2. Download `wots4-mod-post-fx-<version>.zip` from [Releases](../../releases) and extract it.
+3. Copy the extracted `mods` folder into the game's installation folder (the folder containing `WayOfTheSamurai4.exe`). If a `mods` folder already exists, merge the contents into it.
+4. Confirm that `{game installation folder}/mods/post_fx/mod.dll` exists, then start the game.
+
+To keep your current settings when updating, replace only `mod.dll` and do not overwrite `mods/post_fx/config.ini`.
 
 ## Uninstallation
 
@@ -69,6 +69,9 @@ This Mod is a prototype and is not included in Releases yet. Build it following 
 2. Delete the `{game installation folder}/mods/post_fx/` folder. The settings in it (`config.ini`) are deleted too.
 
 ## Building
+
+> [!NOTE]
+> You do not need this just to use the Mod. Refer to it only if you want to fix or develop it.
 
 Requires the [wots4-mods (ModLoader)](https://github.com/nagataaaas/wots4-mods) SDK, MSVC, and the Windows SDK including `fxc.exe`. Builds target x86 and C++17. Shaders are compiled and embedded in the DLL at build time; no shader compiler or additional shader files are required at runtime.
 

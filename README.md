@@ -2,9 +2,10 @@
 
 [English](README.en.md)
 
-Steam 版『侍道4』に、アンチエイリアス、シャープ化、カメラの動きによるモーションブラーを追加する Mod です。
+> [!NOTE]
+> この Mod は [Steam 版『侍道4』](https://store.steampowered.com/app/312780/4/?l=japanese)専用です。
 
-ゲーム外の試験を終えた試作版です。画質・設定タブの表示・各画面での UI 除外・デバイス復旧・他 Mod との併用は要ゲーム内確認です。
+3D の映像に、アンチエイリアス、シャープ化、カメラの動きによるモーションブラーを追加します。文字や UI には掛かりません。
 
 ## 機能
 
@@ -50,18 +51,17 @@ SSAA は描画する画素数が4倍になり、GPU の負荷とメモリ使用�
 | `motion_blur` | `strength` | `normal` | ブラーの強さ。`low` / `normal` / `high` |
 | `motion_blur` | `quality` | `normal` | ブラーの品質。`low` / `normal` / `high` |
 
-更新するときに今の設定を残したい場合は、`mods/post_fx/config.ini` を上書きせずに、`mod.dll` だけを置き換えてください。
-
-## インストール（開発版）
+## インストール
 
 > [!WARNING]
 > 事前に [wots4-mods（ModLoader）](https://github.com/nagataaaas/wots4-mods) を導入してください。
 
-試作版のため、Release にはまだ入れていません。次の [ビルド](#ビルド) の手順でビルドしてから入れてください。
-
 1. ゲームを終了してください。
-2. ビルドで得られた `build/game/mods/post_fx/` フォルダを、侍道4のインストールフォルダ（`WayOfTheSamurai4.exe` がある場所）の `mods` フォルダへコピーしてください。
-3. `{侍道4インストールフォルダ}/mods/post_fx/mod.dll` があることを確認し、ゲームを起動してください。
+2. [Releases](../../releases) から `wots4-mod-post-fx-<バージョン>.zip` をダウンロードし、解凍してください。
+3. 解凍して得られた `mods` フォルダを、侍道4のインストールフォルダ（`WayOfTheSamurai4.exe` がある場所）へコピーしてください。すでに `mods` フォルダがある場合は、その中にまとめてください。
+4. `{侍道4インストールフォルダ}/mods/post_fx/mod.dll` があることを確認し、ゲームを起動してください。
+
+更新するときに今の設定を残したい場合は、`mods/post_fx/config.ini` を上書きせずに、`mod.dll` だけを置き換えてください。
 
 ## アンインストール
 
@@ -69,6 +69,9 @@ SSAA は描画する画素数が4倍になり、GPU の負荷とメモリ使用�
 2. `{侍道4インストールフォルダ}/mods/post_fx/` フォルダを削除してください。中の設定（`config.ini`）も消えます。
 
 ## ビルド
+
+> [!NOTE]
+> この Mod を利用するだけであれば不要です。修正や開発を行いたい場合にのみ参照してください。
 
 [wots4-mods（ModLoader）](https://github.com/nagataaaas/wots4-mods) の SDK、MSVC、Windows SDK（`fxc.exe` を含む）が必要です。x86 / C++17 でビルドします。シェーダーはビルド時にコンパイルして DLL に埋め込むため、実行時にシェーダーコンパイラや追加のシェーダーファイルは不要です。
 

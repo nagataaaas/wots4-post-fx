@@ -31,7 +31,7 @@ add_custom_target(post_fx_shaders DEPENDS ${shader_outputs})
 configure_file(src/shaders.rc.in "${CMAKE_CURRENT_BINARY_DIR}/shaders.rc" @ONLY)
 set_source_files_properties("${CMAKE_CURRENT_BINARY_DIR}/shaders.rc" PROPERTIES OBJECT_DEPENDS "${shader_outputs}")
 
-wots4_add_mod(post_fx NO_RELEASE
+wots4_add_mod(post_fx
     SOURCES src/mod.cpp src/settings.cpp src/game_render.cpp src/post_process.cpp src/device_state.cpp
         "${CMAKE_CURRENT_BINARY_DIR}/shaders.rc"
     DEF src/mod.def LIBS wots4_minhook d3d9
