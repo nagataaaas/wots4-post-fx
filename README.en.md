@@ -32,7 +32,7 @@ The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen
 | Motion Blur | Off / On | Off |
 | Blur Strength | Low / Normal / High | Normal |
 | Blur Quality | Low / Normal / High | Normal |
-| SSAA | Off / 1.5x per axis (2.25 samples) / 2x per axis (4 samples) | Off |
+| SSAA | Off / 1.5x / 2x | Off |
 
 Strength changes exposure, and quality changes the sample count (4 / 8 / 12). Higher quality increases GPU work. Actual rendering time and FPS have not been measured.
 

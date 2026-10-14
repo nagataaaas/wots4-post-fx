@@ -7,8 +7,7 @@
 namespace post_fx {
 namespace {
 const wots4::LocalizedText aaChoices[] = {{L"無効", L"Off"}, {L"FXAA", L"FXAA"}, {L"SMAA", L"SMAA"}};
-const wots4::LocalizedText ssaaChoices[] = {{L"無効", L"Off"}, {L"縦横1.5倍（2.25サンプル）", L"1.5x per axis (2.25 samples)"},
-    {L"縦横2倍（4サンプル）", L"2x per axis (4 samples)"}};
+const wots4::LocalizedText ssaaChoices[] = {{L"無効", L"Off"}, {L"1.5倍", L"1.5x"}, {L"2倍", L"2x"}};
 const wots4::LocalizedText toggleChoices[] = {{L"有効", L"On"}, {L"無効", L"Off"}};
 const wots4::LocalizedText strengths[] = {{L"弱", L"Low"}, {L"標準", L"Normal"}, {L"強", L"High"}};
 const wots4::LocalizedText qualities[] = {{L"低", L"Low"}, {L"標準", L"Normal"}, {L"高", L"High"}};

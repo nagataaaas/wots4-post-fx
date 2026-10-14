@@ -38,7 +38,7 @@ void checkRegisteredPage() {
     test::check("AA choices include SMAA and SSAA has Off, 1.5x and 2x",
         items[post_fx::antialiasing].choiceCount == 3 && !wcscmp(items[post_fx::antialiasing].choices[2].english, L"SMAA") &&
         items[post_fx::supersampling].choiceCount == 3 && !wcscmp(items[post_fx::supersampling].label.english, L"SSAA") &&
-        !wcscmp(items[post_fx::supersampling].choices[1].english, L"1.5x per axis (2.25 samples)"));
+        !wcscmp(items[post_fx::supersampling].choices[1].english, L"1.5x"));
     test::check("Sharpening follows anti-aliasing with Off and three strengths",
         items[post_fx::sharpening].choiceCount == 4 && !wcscmp(items[post_fx::sharpening].label.japanese, L"シャープ化") &&
         !wcscmp(items[post_fx::sharpening].choices[3].english, L"High") && items[post_fx::sharpening].defaultValue == 0);
