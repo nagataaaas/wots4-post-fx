@@ -255,7 +255,7 @@ int main(int argc, char** argv) {
     test::check("Compiled shaders load from the DLL resources", module != nullptr);
     if (!module) return 3;
     post_fx::PostProcess effects;
-    test::check("All six shaders have valid ps_3_0 bytecode", effects.initialize(module));
+    test::check("All seven shaders have valid ps_3_0 bytecode", effects.initialize(module));
     Object objects[12];
     for (auto& object : objects) object.table = objectTable;
     Object color{objectTable}, depth{objectTable};
@@ -301,10 +301,11 @@ int main(int argc, char** argv) {
     const unsigned beforeBlur = fake.draws;
     effects.render(device, input, depthInput, camera(), 2.033, settings);
     test::check("Blur plus FXAA draws three independent passes", fake.draws == beforeBlur + 3 && sameState(fake, original));
-    // prepare() created the shaders first, in ShaderIndex order: copy, FXAA, blur, ...
+    // prepare() created the shaders first, in ShaderIndex order: copy, FXAA, blur, ..., sharpen.
     Object* const copyShader = fake.created[0];
     Object* const fxaaShader = fake.created[1];
     Object* const blurShader = fake.created[2];
+    Object* const sharpenShader = fake.created[6];
     const auto drawnShaders = [&](unsigned count) {
         std::vector<Object*> shaders;
         for (size_t index = fake.drawRecords.size() - count; index < fake.drawRecords.size(); ++index)
@@ -315,6 +316,14 @@ int main(int argc, char** argv) {
         drawnShaders(3) == std::vector<Object*>{fxaaShader, blurShader, copyShader} &&
         fake.drawRecords[fake.drawRecords.size() - 2].secondTexture == &depth &&
         fake.drawRecords[fake.drawRecords.size() - 2].secondFilter == D3DTEXF_POINT);
+    settings.change(post_fx::sharpening, post_fx::sharpeningNormal);
+    effects.render(device, input, depthInput, camera(), 2.04, settings);
+    const unsigned beforeSharpening = fake.draws;
+    effects.render(device, input, depthInput, camera(), 2.05, settings);
+    test::check("Sharpening runs after anti-aliasing and before the blur",
+        fake.draws == beforeSharpening + 4 && drawnShaders(4) == std::vector<Object*>{fxaaShader, sharpenShader, blurShader, copyShader});
+    test::check("Sharpening restores its shader constant and every other state", sameState(fake, original) && !fake.alias);
+    settings.change(post_fx::sharpening, post_fx::sharpeningOff);
     const unsigned beforeMissingDepth = fake.draws;
     effects.render(device, input, nullptr, camera(), 2.066, settings);
     test::check("Missing depth skips blur while retaining FXAA", fake.draws == beforeMissingDepth + 2);

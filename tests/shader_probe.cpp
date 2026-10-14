@@ -307,6 +307,37 @@ int main(int argc, char** argv) {
     post_fx::release(silhouetteDepth);
 
     settings.change(post_fx::antialiasing, post_fx::aaOff);
+    // A soft vertical edge: dark until x = 28, a 6-pixel ramp, then bright.
+    const auto softEdge = [](UINT x) { return x < 28 ? 64u : x >= 34 ? 192u : 64u + (x - 28) * 128u / 6; };
+    for (UINT y = 0; y < imageSize; ++y)
+        for (UINT x = 0; x < imageSize; ++x)
+            input[y * imageSize + x] = (static_cast<DWORD>(x * 3 + y) % 256 << 24) | softEdge(x) * 0x010101;
+    double changeByLevel[4]{};
+    for (uint32_t level = post_fx::sharpeningLow; level <= post_fx::sharpeningHigh; ++level) {
+        settings.change(post_fx::sharpening, level);
+        test::check("Soft edge uploads", image.upload(fixture.device, input));
+        test::check("Sharpening draws on real D3D9", render(effects, fixture.device, image, settings));
+        test::check("Sharpened output reads back", image.read(fixture.device, output));
+        if (output.size() != input.size()) return 4;
+        const unsigned row = 32 * imageSize;
+        const int darkSide = static_cast<int>(output[row + 28] & 0xff), brightSide = static_cast<int>(output[row + 34] & 0xff);
+        changeByLevel[level] = imageChange(input, output);
+        printf("  Sharpening level %u: ramp ends %d/%d (input 64/192); mean change %.3f\n",
+            level, darkSide, brightSide, changeByLevel[level]);
+        test::check("Sharpening steepens the ramp", darkSide < 64 && brightSide > 192);
+        test::check("Sharpening leaves flat regions and alpha unchanged", [&]() {
+            for (UINT y = 0; y < imageSize; ++y)
+                for (UINT x : {2u, 20u, 44u, 60u})
+                    if (output[y * imageSize + x] != input[y * imageSize + x]) return false;
+            for (UINT index = 0; index < input.size(); ++index)
+                if ((input[index] >> 24) != (output[index] >> 24)) return false;
+            return true;
+        }());
+    }
+    test::check("Higher sharpening levels sharpen more",
+        changeByLevel[1] < changeByLevel[2] && changeByLevel[2] < changeByLevel[3]);
+    settings.change(post_fx::sharpening, post_fx::sharpeningOff);
+
     for (UINT y = 0; y < imageSize; ++y)
         for (UINT x = 0; x < imageSize; ++x)
             input[y * imageSize + x] = 0x7f000000 | (((x + y) % 2) ? 224u : 24u) * 0x010101;

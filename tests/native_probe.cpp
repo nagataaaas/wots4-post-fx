@@ -1,4 +1,5 @@
 #include "mapped_exe.h"
+#include "settings.h"
 #include <filesystem>
 #include <d3d9.h>
 
@@ -73,14 +74,15 @@ int main(int argc, char** argv) {
     const BOOL accepted = initialize(&context);
     if (scenario == "valid" || scenario == "steam" || scenario == "ssaa") {
         check("Known renderer initializes without a device", accepted == TRUE);
-        check("Five options, the SSAA notice and save/frame callbacks register",
-            options == 6 && frameCallbacks == 1 && saveCallbacks == 1);
+        check("Six options, the SSAA notice and save/frame callbacks register",
+            options == post_fx::optionCount + 1 && frameCallbacks == 1 && saveCallbacks == 1);
         check("All overwritten hook ranges are reserved", claimed(0x7187a0, 6) && claimed(0x6e5c10, 7) &&
             claimed(0x542d00, 7) && claimed(0x890e20, 5) && claimed(0x541930, 8));
-        uint32_t values[5]{};
-        page.read(page.context, values, 5);
-        check("Options initially disable effects", values[0] == 0 && values[1] == 0 && values[2] == 1 && values[3] == 1);
-        check("SSAA loads its startup selection", values[4] == (scenario == "ssaa" ? 1u : 0u));
+        uint32_t values[post_fx::optionCount]{};
+        page.read(page.context, values, post_fx::optionCount);
+        check("Options initially disable effects", values[post_fx::antialiasing] == 0 && values[post_fx::sharpening] == 0 &&
+            values[post_fx::motionBlur] == 0 && values[post_fx::blurStrength] == 1 && values[post_fx::blurQuality] == 1);
+        check("SSAA loads its startup selection", values[post_fx::supersampling] == (scenario == "ssaa" ? 1u : 0u));
         unsigned char scene[0xc8]{}, frame[0x30]{};
         *reinterpret_cast<void**>(va(0x9eb070)) = scene;
         *reinterpret_cast<void**>(scene + 0x74) = frame;

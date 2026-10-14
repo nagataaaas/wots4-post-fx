@@ -21,6 +21,8 @@ constexpr float relativeDepthTolerance = 0.02f;
 // keeps its blur while nearby characters stay readable. Tuned on synthetic scenes.
 constexpr float nearFadeStart = 8, nearFadeEnd = 50;
 constexpr float nearExposureRatio = 0.1f, nearMaximumPixels = 3;
+// CAS sharpness (0 to 1) for the Low/Normal/High sharpening choices.
+constexpr float sharpnessByLevel[] = {0, 0.5f, 1};
 
 bool supportedDepth(D3DFORMAT format) {
     return format == D3DFMT_R32F || format == D3DFMT_G32R32F || format == D3DFMT_A32B32G32R32F ||
@@ -291,6 +293,14 @@ HRESULT PostProcess::applySmaa(IDirect3DTexture9* input, IDirect3DTexture9* dept
     // The motion blur after SMAA reads depth from the sampler the area lookup filtered.
     return sampleDepthByPoint();
 }
+HRESULT PostProcess::applySharpening(IDirect3DTexture9* input, uint32_t level, unsigned output) {
+    const float sharpness = sharpnessByLevel[level - sharpeningLow];
+    // CAS peak weight: -1/8 at sharpness 0 to -1/5 at sharpness 1.
+    const float peak[] = {-1 / (8 + (5 - 8) * sharpness), 0, 0, 0};
+    const HRESULT status = device->SetPixelShaderConstantF(shader_register::sharpening, peak, 1);
+    if (FAILED(status)) return status;
+    return draw(scratchSurfaces[output], input, nullptr, shaders[sharpenShader]);
+}
 HRESULT PostProcess::resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9* colorSurface) {
     // A 2:1 bilinear reduction averages the four independently rendered samples, in linear space.
     HRESULT status = setLinearBlending(true);
@@ -312,7 +322,7 @@ HRESULT PostProcess::renderPasses(IDirect3DTexture9* color, IDirect3DTexture9* d
     HRESULT status = bindPassState();
     if (FAILED(status)) return status;
     // Each pass reads the previous result and writes the other scratch texture. Anti-aliasing
-    // runs before the blur so it works on the scene's edges, not on blur streaks.
+    // and sharpening run before the blur so they work on the scene's edges, not on blur streaks.
     IDirect3DTexture9* input = color;
     unsigned output = 0;
     const auto advance = [&]() {
@@ -326,6 +336,12 @@ HRESULT PostProcess::renderPasses(IDirect3DTexture9* color, IDirect3DTexture9* d
     }
     if (method == aaSmaa) {
         status = applySmaa(input, depthUsable(depth) ? depth : nullptr, output);
+        if (FAILED(status)) return status;
+        advance();
+    }
+    const uint32_t sharpeningLevel = settings.value(sharpening);
+    if (sharpeningLevel != sharpeningOff) {
+        status = applySharpening(input, sharpeningLevel, output);
         if (FAILED(status)) return status;
         advance();
     }
@@ -356,7 +372,8 @@ HRESULT PostProcess::render(IDirect3DDevice9* currentDevice, IDirect3DTexture9* 
     const HRESULT smaaSetup = settings.value(antialiasing) == aaSmaa ? ensureSmaa() : S_OK;
     const uint32_t method = settings.value(antialiasing) == aaSmaa && smaaUnavailable ? aaOff : settings.value(antialiasing);
     const Exposure exposure = advanceHistory(camera, depth, seconds, settings);
-    if (!exposure.valid && method == aaOff && factor == 1) return FAILED(smaaSetup) ? smaaSetup : S_FALSE;
+    if (!exposure.valid && method == aaOff && settings.value(sharpening) == sharpeningOff && factor == 1)
+        return FAILED(smaaSetup) ? smaaSetup : S_FALSE;
     IDirect3DSurface9* colorSurface = nullptr;
     result = color->GetSurfaceLevel(0, &colorSurface);
     if (FAILED(result)) return result;

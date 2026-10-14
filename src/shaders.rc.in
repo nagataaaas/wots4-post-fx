@@ -5,3 +5,4 @@
 104 RCDATA "@shader_directory@/smaa_edges.cso"
 105 RCDATA "@shader_directory@/smaa_weights.cso"
 106 RCDATA "@shader_directory@/smaa_blend.cso"
+107 RCDATA "@shader_directory@/sharpen.cso"

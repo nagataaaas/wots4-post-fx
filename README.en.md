@@ -2,7 +2,7 @@
 
 [日本語](README.md)
 
-A Mod for the Steam version of *Way of the Samurai 4* that adds anti-aliasing and camera motion blur.
+A Mod for the Steam version of *Way of the Samurai 4* that adds anti-aliasing, sharpening and camera motion blur.
 
 This prototype has been tested outside the game. Image quality, the options tab, UI exclusion across screens, device recovery and compatibility with other Mods still require in-game verification.
 
@@ -11,7 +11,8 @@ This prototype has been tested outside the game. Image quality, the options tab,
 - FXAA reduces jagged edges. Fine patterns can become softer.
 - SMAA 1x detects edge patterns and uses the official implementation's Ultra preset. It also uses depth differences, so it smooths the outlines of objects whose colors are close to the background.
 - SSAA renders the 3D scene at twice the resolution on each axis, then reduces it by averaging four pixels. It can be combined with FXAA or SMAA. UI resolution stays unchanged.
-- Anti-aliasing applies before motion blur. It does not process the edges of blur streaks.
+- Sharpening uses AMD CAS (Contrast Adaptive Sharpening) to bring back detail softened by anti-aliasing. Areas that are already sharp are sharpened less.
+- Anti-aliasing and sharpening apply before motion blur. They do not process the edges of blur streaks.
 - Motion blur follows camera movement. It does not blur independently moving characters or swords while the camera is stationary.
 - Blur strength and maximum width are reduced near the camera. This distance-based adjustment applies to the player, nearby NPCs and foreground objects.
 - Enable each effect independently. The effects apply to the 3D image, not to text or the UI.
@@ -26,12 +27,15 @@ The Mod adds a "Post FX" tab ("映像後処理" in Japanese) to the title-screen
 | Setting | Choices | Default |
 | --- | --- | --- |
 | Anti-Aliasing | Off / FXAA / SMAA | Off |
+| Sharpening | Off / Low / Normal / High | Off |
 | Motion Blur | Off / On | Off |
 | Blur Strength | Low / Normal / High | Normal |
 | Blur Quality | Low / Normal / High | Normal |
 | SSAA | Off / 2x per axis (4 samples) | Off |
 
 Strength changes exposure, and quality changes the sample count (4 / 8 / 12). Higher quality increases GPU work. Actual rendering time and FPS have not been measured.
+
+Stronger sharpening increases the light/dark contrast at edges. Too much of it can show outlines around edges.
 
 SSAA quadruples the rendered pixel count and significantly increases GPU work and memory usage. If the enlarged scene exceeds device texture dimensions or the 64 Mi-pixel scene limit, the scene is drawn at native resolution. Even within these limits, the GPU may not have enough memory. Compare SMAA alone first, then try SSAA if performance permits.
 
@@ -41,6 +45,7 @@ Strength and quality are retained while blur is off. The values live in `mods/po
 | --- | --- | --- | --- |
 | `antialiasing` | `method` | `off` | Anti-aliasing: `off` / `fxaa` / `smaa` |
 | `antialiasing` | `supersampling` | `off` | SSAA: `off` / `2x` (twice per axis, 4 samples). Applied at the next game start |
+| `sharpening` | `strength` | `off` | Sharpening: `off` / `low` / `normal` / `high` |
 | `motion_blur` | `enabled` | `0` | Motion blur: `1` on, `0` off |
 | `motion_blur` | `strength` | `normal` | Blur strength: `low` / `normal` / `high` |
 | `motion_blur` | `quality` | `normal` | Blur quality: `low` / `normal` / `high` |
@@ -79,4 +84,4 @@ See [docs/VALIDATION.md](docs/VALIDATION.md) for test coverage and remaining che
 
 ## License
 
-MinHook's license is in [docs/licenses/minhook.txt](docs/licenses/minhook.txt), and SMAA's license is in [docs/licenses/smaa.txt](docs/licenses/smaa.txt). The game's executable and existing shader source files are not included in distributions.
+MinHook's license is in [docs/licenses/minhook.txt](docs/licenses/minhook.txt), SMAA's license is in [docs/licenses/smaa.txt](docs/licenses/smaa.txt), and AMD CAS's license is in [docs/licenses/cas.txt](docs/licenses/cas.txt). The game's executable and existing shader source files are not included in distributions.

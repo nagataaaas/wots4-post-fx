@@ -19,7 +19,9 @@ public:
     bool failed() const { return suspended; }
 private:
     // Same order as the RCDATA numbers in shaders.rc.in.
-    enum ShaderIndex : unsigned { copyShader, fxaaShader, blurShader, edgesShader, weightsShader, neighborhoodShader, shaderCount };
+    enum ShaderIndex : unsigned {
+        copyShader, fxaaShader, blurShader, edgesShader, weightsShader, neighborhoodShader, sharpenShader, shaderCount
+    };
     HRESULT prepare(IDirect3DDevice9* device, const D3DSURFACE_DESC& description, unsigned supersampleFactor);
     HRESULT prepareSmaa();
     HRESULT ensureSmaa();
@@ -32,7 +34,9 @@ private:
     HRESULT bindPassState();
     HRESULT applyMotionBlur(IDirect3DTexture9* input, IDirect3DTexture9* depth, const Exposure& exposure,
         const CameraSample& camera, uint32_t quality, unsigned output);
-    HRESULT applySmaa(IDirect3DTexture9* input, IDirect3DTexture9* depth, unsigned output);    HRESULT resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9* colorSurface);
+    HRESULT applySmaa(IDirect3DTexture9* input, IDirect3DTexture9* depth, unsigned output);
+    HRESULT applySharpening(IDirect3DTexture9* input, uint32_t level, unsigned output);
+    HRESULT resolveSamples(IDirect3DTexture9* input, IDirect3DSurface9* colorSurface);
     HRESULT setLinearBlending(bool enabled);
     HRESULT draw(IDirect3DSurface9* output, IDirect3DTexture9* input, IDirect3DTexture9* depth,
         IDirect3DPixelShader9* shader, UINT outputWidth = 0, UINT outputHeight = 0);

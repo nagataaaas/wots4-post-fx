@@ -11,8 +11,10 @@ const wots4::LocalizedText ssaaChoices[] = {{L"無効", L"Off"}, {L"縦横2倍�
 const wots4::LocalizedText toggleChoices[] = {{L"有効", L"On"}, {L"無効", L"Off"}};
 const wots4::LocalizedText strengths[] = {{L"弱", L"Low"}, {L"標準", L"Normal"}, {L"強", L"High"}};
 const wots4::LocalizedText qualities[] = {{L"低", L"Low"}, {L"標準", L"Normal"}, {L"高", L"High"}};
+const wots4::LocalizedText sharpeningLevels[] = {{L"無効", L"Off"}, {L"弱", L"Low"}, {L"標準", L"Normal"}, {L"強", L"High"}};
 const wots4::OptionItem items[] = {
     {wots4::optionChoice, {L"アンチエイリアス", L"Anti-Aliasing"}, aaChoices, 3, 0},
+    {wots4::optionChoice, {L"シャープ化", L"Sharpening"}, sharpeningLevels, 4, 0},
     {wots4::optionToggle, {L"モーションブラー", L"Motion Blur"}, toggleChoices, 2, 0},
     {wots4::optionChoice, {L"ブラーの強さ", L"Blur Strength"}, strengths, 3, 1},
     {wots4::optionChoice, {L"ブラーの品質", L"Blur Quality"}, qualities, 3, 1},
@@ -24,9 +26,11 @@ const wchar_t* const methodNames[] = {L"off", L"fxaa", L"smaa"};
 const wchar_t* const enabledNames[] = {L"0", L"1"};
 const wchar_t* const levelNames[] = {L"low", L"normal", L"high"};
 const wchar_t* const supersamplingNames[] = {L"off", L"2x"};
+const wchar_t* const sharpeningNames[] = {L"off", L"low", L"normal", L"high"};
 struct ConfigKey { const wchar_t* section; const wchar_t* key; const wchar_t* const* names; };
 const ConfigKey configKeys[] = {
     {L"antialiasing", L"method", methodNames},
+    {L"sharpening", L"strength", sharpeningNames},
     {L"motion_blur", L"enabled", enabledNames},
     {L"motion_blur", L"strength", levelNames},
     {L"motion_blur", L"quality", levelNames},

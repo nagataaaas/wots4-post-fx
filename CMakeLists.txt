@@ -18,7 +18,7 @@ find_program(POST_FX_COMPILER fxc
     REQUIRED)
 set(shader_directory "${CMAKE_CURRENT_BINARY_DIR}/shaders")
 file(MAKE_DIRECTORY "${shader_directory}")
-foreach(shader IN ITEMS copy fxaa motion_blur smaa_edges smaa_weights smaa_blend)
+foreach(shader IN ITEMS copy fxaa motion_blur smaa_edges smaa_weights smaa_blend sharpen)
     add_custom_command(OUTPUT "${shader_directory}/${shader}.cso"
         COMMAND "${POST_FX_COMPILER}" /nologo /T ps_3_0 /E main /O3
             /Fo "${shader_directory}/${shader}.cso" "${CMAKE_CURRENT_SOURCE_DIR}/shaders/${shader}.hlsl"
@@ -36,7 +36,7 @@ wots4_add_mod(post_fx NO_RELEASE
         "${CMAKE_CURRENT_BINARY_DIR}/shaders.rc"
     DEF src/mod.def LIBS wots4_minhook d3d9
     FILES config.ini README.md README.en.md
-    LICENSES docs/licenses/minhook.txt docs/licenses/smaa.txt)
+    LICENSES docs/licenses/minhook.txt docs/licenses/smaa.txt docs/licenses/cas.txt)
 target_include_directories(mod_post_fx PRIVATE src)
 target_compile_definitions(mod_post_fx PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 add_dependencies(mod_post_fx post_fx_shaders)
