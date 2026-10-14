@@ -83,6 +83,7 @@ bool fullPort(void* camera) {
     return std::abs(port[0]) < tolerance && std::abs(port[1] - 1) < tolerance &&
         std::abs(port[2] - 1) < tolerance && std::abs(port[3]) < tolerance;
 }
+// A hidden or background window's frames are not continuous for the viewer.
 bool windowFocused(IDirect3DDevice9* device) {
     D3DDEVICE_CREATION_PARAMETERS creation{};
     if (!device || FAILED(device->GetCreationParameters(&creation)) || !creation.hFocusWindow) return true;
@@ -289,11 +290,10 @@ void GameRender::process(void* scene) {
     CameraSample current = sample;
     current.valid = current.valid && !ambiguous && current.scene == reinterpret_cast<uintptr_t>(scene);
     if (settings->value(motionBlur) && !current.valid && !cameraWarningReported) cameraWarningPending = true;
+    // Only blur needs continuous frames; anti-aliasing and the SSAA resolve still apply.
+    if (!windowFocused(device)) current.valid = false;
     LARGE_INTEGER now{};
-    if (!QueryPerformanceCounter(&now) || !windowFocused(device)) {
-        effects->clearHistory();
-        return;
-    }
+    if (!QueryPerformanceCounter(&now)) current.valid = false;
     const double seconds = static_cast<double>(now.QuadPart) / clockFrequency;
     const HRESULT result = effects->render(device, color, depth, current, seconds, *settings, factor);
     if (FAILED(result) && !errorReported) pendingError = result;
