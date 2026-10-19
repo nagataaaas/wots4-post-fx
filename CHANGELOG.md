@@ -2,6 +2,10 @@
 
 [English](CHANGELOG.en.md)
 
+## [v2026.10.19](https://github.com/nagataaaas/wots4-post-fx/releases/tag/v2026.10.19)
+
+- ModLoader v2026.10.19 に合わせてビルドし直しました。機能の変更はありません。
+
 ## [v2026.10.14.3](https://github.com/nagataaaas/wots4-post-fx/releases/tag/v2026.10.14.3)
 
 - SSAA に「1.5倍」（縦横1.5倍・2.25サンプル）を追加しました。2倍より軽く、効果も控えめです。

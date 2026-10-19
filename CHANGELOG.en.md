@@ -2,6 +2,10 @@
 
 [日本語](CHANGELOG.md)
 
+## [v2026.10.19](https://github.com/nagataaaas/wots4-post-fx/releases/tag/v2026.10.19)
+
+- Rebuilt against ModLoader v2026.10.19. No changes to the features.
+
 ## [v2026.10.14.3](https://github.com/nagataaaas/wots4-post-fx/releases/tag/v2026.10.14.3)
 
 - Added a 1.5x SSAA choice (1.5 times the width and height, 2.25 samples). It is lighter than 2x, with a milder effect.
